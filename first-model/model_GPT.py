@@ -3,15 +3,16 @@ import os
 from huggingface_hub import InferenceClient
 import time
 import csv
-from groq import Groq  
-from groq.types.chat import ChatCompletionMessageParam 
+from groq import Groq
+from groq.types.chat import ChatCompletionMessageParam
+from openai import OpenAI
 
 # --- Settings ---
 #HF_TOKEN = os.getenv("HF_TOKEN")
+#GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+#PPLX_API_KEY = os.getenv("PPLX_API_KEY")
 #if not HF_TOKEN:
 #    print("HF_TOKEN not found! Please set your environment variable.")
-#HF_TOKEN = ""
-GROQ_API_KEY = ""
 
 EXCEL_FILE = 'attack_prompts.xlsx'
 RESULTS_FILE = 'responses_results.csv'
@@ -25,7 +26,8 @@ if not os.path.exists(RESULTS_FILE):
     print(f"Created new results file: {RESULTS_FILE}")
 
 #client = InferenceClient(token=HF_TOKEN)
-client = Groq(api_key=GROQ_API_KEY)
+#client = Groq(api_key=GROQ_API_KEY)
+client = OpenAI(api_key=PPLX_API_KEY,base_url="https://api.perplexity.ai/")
 
 # --- Load Excel (Read Only) ---
 print(f"Reading Excel file: {EXCEL_FILE}...")
@@ -33,7 +35,6 @@ df = pd.read_excel(EXCEL_FILE)
 
 # Filtering (if needed)
 df_filtered = df[df['AttackMethod'] == 'Persuative LLM']
-# df_filtered = df # Uncomment to run on all rows
 
 total_rows = len(df_filtered)
 print(f"Starting process for {total_rows} prompts...")
@@ -58,6 +59,7 @@ for i, (index, row) in enumerate(df_filtered.iterrows()):
 
     try:
         # Send to model
+
         #Hugging face
         #------------------------------------------------------#
         #response = client.chat_completion(
@@ -66,18 +68,17 @@ for i, (index, row) in enumerate(df_filtered.iterrows()):
         #    max_tokens=4096
         #)
         #------------------------------------------------------#
-        #GROQ
-        #----------------------------------------------------------------#
-        messages: list[ChatCompletionMessageParam] = [
-            {"role": "user", "content": prompt_text}
-        ]
 
+        #GROQ + PREPLEXITY
+        #----------------------------------------------------------------#
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant", 
-            messages=messages,
-            max_tokens=4096 
+            model="sonar",
+            #model="llama3-70b-8192",   #groq
+            messages=[{"role": "user", "content": prompt_text}],
+            max_tokens=4096
         )
         # ----------------------------------------------------------------#
+
         response_text = response.choices[0].message.content
 
         # Save to CSV (only if successful)
@@ -99,7 +100,7 @@ for i, (index, row) in enumerate(df_filtered.iterrows()):
         # Error handling (Print to terminal only)
         end_time = time.time()
         duration = end_time - start_time
-        print(f"❌ ERROR on Row {index}: {e}")
+        print(f"   ERROR on Row {index}: {e}")
         print(f"   [DEBUG REPORT]")
         print(f"   1. Length of prompt: {len(prompt_text)}")
         print(f"   2. Type of data: {type(prompt_text)}")
