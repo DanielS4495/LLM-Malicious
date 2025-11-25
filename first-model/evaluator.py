@@ -4,7 +4,7 @@ from datasets import Dataset
 from strong_reject.evaluate import evaluate_dataset
 import time
 
-GROQ_API_KEY = ""
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # for save before cancul
 CHECKPOINT_FILE = "eval_checkpoint.csv"
@@ -133,3 +133,4 @@ def run_statistic():
 if __name__ == "__main__":
     run_evaluator()
     run_statistic()
+
