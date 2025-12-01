@@ -3,7 +3,9 @@ import pandas as pd
 from datasets import Dataset
 from strong_reject.evaluate import evaluate_dataset
 import time
+from dotenv import load_dotenv
 
+load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # for save before cancul
@@ -74,8 +76,8 @@ def run_evaluator():
             print(f"Error processing row {i + 1}: {e}")
             pass
 
-        print("Waiting 2 seconds...")
-        time.sleep(2)
+        print("Waiting 10 seconds...")
+        time.sleep(10)
 
     print("--- Evaluation loop finished. Merging final results ---")
 
