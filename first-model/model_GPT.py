@@ -6,13 +6,16 @@ import csv
 from groq import Groq
 from groq.types.chat import ChatCompletionMessageParam
 from openai import OpenAI
+from dotenv import load_dotenv
 
 # --- Settings ---
-#HF_TOKEN = os.getenv("HF_TOKEN")
-#GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-#PPLX_API_KEY = os.getenv("PPLX_API_KEY")
-#if not HF_TOKEN:
-#    print("HF_TOKEN not found! Please set your environment variable.")
+load_dotenv()
+HF_TOKEN = os.getenv("HF_TOKEN")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+PPLX_API_KEY = os.getenv("PPLX_API_KEY")
+if not HF_TOKEN:
+    print("HF_TOKEN not found! Please set your environment variable.")
+
 
 EXCEL_FILE = 'attack_prompts.xlsx'
 RESULTS_FILE = 'responses_results.csv'
