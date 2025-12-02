@@ -5,6 +5,7 @@ from strong_reject.evaluate import evaluate_dataset
 import time
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+print(GROQ_API_KEY)
 
 # for save before cancul
 CHECKPOINT_FILE = "eval_checkpoint.csv"
@@ -89,8 +90,8 @@ def run_evaluator():
     cols_to_drop = [c for c in ev_df.columns if c in df.columns and c != "row_id"]
     out = df.merge(ev_df.drop(columns=cols_to_drop), on="row_id", how="left")
 
-    out.to_csv("responses_results_evaluated.csv", index=False)
-    print("Saved FINAL file -> responses_results_evaluated.csv")
+    out.to_csv("responses_results_evaluated_preplexity_sonar.csv", index=False)
+    print("Saved FINAL file -> responses_results_evaluated_preplexity_sonar.csv")
 
 # the statistic of the results
 #------------------------------------------------------------------------------#
@@ -99,7 +100,7 @@ def run_statistic():
     try:
         final_df = pd.read_csv("responses_results_evaluated.csv")
     except FileNotFoundError:
-        print("Error: 'responses_results_evaluated.csv' not found. Run the evaluator first!")
+        print("Error: 'responses_results_evaluated_preplexity_sonar.csv' not found. Run the evaluator first!")
         return
 
     # 1. Calculation of Overall Jailbreak Rate (Assuming refusal=0 means Jailbreak)

@@ -62,47 +62,30 @@ def groq_provider(prompt: str, model: str):
             {"role": "user", "content": prompt}
         ]
     )
-
     return response.choices[0].message["content"]
 
 
 def huggingface_provider(prompt: str, model: str):
     client = InferenceClient(token=HF_TOKEN)
-
     response = client.chat_completion(
-
         model=model,
-
         messages=[
-
             {"role": "system", "content": SYSTEM_INSTRUCTION},
-
             {"role": "user", "content": prompt}
-
         ],
-
         max_tokens=4096
-
     )
-
     return response.choices[0]["message"]["content"]
 
 
 def chatgpt_provider(prompt: str, model: str):
     client = OpenAI(api_key=OPENAI_API_KEY)
-
     response = client.chat.completions.create(
-
         model=model,
-
         messages=[
-
             {"role": "system", "content": SYSTEM_INSTRUCTION},
-
             {"role": "user", "content": prompt}
-
         ],
-
         max_tokens=4096
 
     )
@@ -118,44 +101,28 @@ def chatgpt_provider(prompt: str, model: str):
 
 
 MODEL_REGISTRY = {
-
     "perplexity": {
-
         "model": "sonar",
-
         "provider": perplexity_provider
-
     },
 
     "groq": {
-
         "model": "llama3-70b-8192",
-
         "provider": groq_provider
-
     },
 
     "huggingface": {
-
         "model": "meta-llama/Meta-Llama-3-70B-Instruct",
-
         "provider": huggingface_provider
-
     },
 
     "chatgpt": {
-
         "model": "gpt-4o-mini",
-
         "provider": chatgpt_provider
-
     }
 
 }
 
-# בוחרים איזה מודל הפעולה תרוץ עליו
-
-# שנה כאן ל: "groq", "huggingface", "chatgpt" לפי הצורך
 
 ACTIVE_MODEL = "perplexity"
 
@@ -188,93 +155,54 @@ if not os.path.exists(RESULTS_FILE):
     print(f"Created new results file: {RESULTS_FILE}")
 
 # ---------------------- #
-
 #   Load Excel
-
 # ---------------------- #
 
 print(f"Reading Excel file: {EXCEL_FILE}...")
-
 df = pd.read_excel(EXCEL_FILE)
-
 df_filtered = df[df['AttackMethod'] == 'Persuative LLM']
-
 print(f"Starting process for {len(df_filtered)} prompts...")
 
 # ---------------------- #
-
 #   Main Loop
-
 # ---------------------- #
 
 for i, (index, row) in enumerate(df_filtered.iterrows(), start=1):
 
     start = time.time()
-
     prompt_text = str(row["prompt"]).strip()
-
-    # ניקוי בסיסי של הפרומפט (אופציונלי, נשאר מהקוד המקורי אם תרצה)
-
     prompt_text = prompt_text.replace('[', '').replace(']', '').strip('"').strip("'")
-
     behavior = row["AttackMethod"]
-
     print(f"\n>>> Processing {i}/{len(df_filtered)} (Row index: {index})")
 
     try:
-
         # get provider + model
-
         model_name = ACTIVE_PROVIDER["model"]
-
         provider_func = ACTIVE_PROVIDER["provider"]
-
         response = provider_func(prompt_text, model_name)
-
         # Save:
 
         with open(RESULTS_FILE, "a", newline='', encoding='utf-8') as f:
-
             writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
-
             writer.writerow({
-
                 "AttackMethod": behavior,
-
                 "prompt": prompt_text,
-
                 "Response": response
-
             })
-
         print(f"✅ Saved (time: {time.time() - start:.2f}s)")
 
 
-
-
-
     except Exception as e:
-
         # Error handling (Print to terminal only)
-
         end_time = time.time()
-
         duration = end_time - start
-
         print(f"   ERROR on Row {index}: {e}")
-
         print(f"   [DEBUG REPORT]")
-
         print(f"   1. Length of prompt: {len(prompt_text)}")
-
         print(f"   2. Type of data: {type(prompt_text)}")
-
         print(f"   3. Content (RAW): {repr(prompt_text)}")
-
         print(f"   (Time taken: {duration:.2f} seconds)")
-
         print("-" * 30)
-
     time.sleep(2)
 
 print(f"\nDone. Results saved to: {RESULTS_FILE}")
