@@ -11,14 +11,11 @@ from dotenv import load_dotenv
 # ---------------------- #
 load_dotenv()
 
-# וודא שיש לך את המפתח הזה בקובץ .env
 OPSWAT_API_KEY = os.getenv("OPSWAT_API_KEY")
 
-# שם הקובץ שהעלית
 INPUT_CSV = "responses_results_groq-3.1_llama-3.1-8b-instant.csv"
-OUTPUT_CSV = "malware_scan_results_groq-3.1_llama-3.1-8b-instant.csv"
+OUTPUT_CSV = "meta_defender_scan_results_groq-3.1_llama-3.1-8b-instant.csv"
 
-# כתובות ה-API
 UPLOAD_URL = "https://api.metadefender.com/v4/file"
 RESULT_URL = "https://api.metadefender.com/v4/file/{data_id}"
 
@@ -199,5 +196,6 @@ for i, (index, row) in enumerate(df_to_scan.iterrows(), start=processed_rows + 1
 
     print("   Sleeping 10s to respect API limits...")
     time.sleep(10)
+
 
 print("\nDone scanning.")
