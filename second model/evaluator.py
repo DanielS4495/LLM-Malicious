@@ -4,22 +4,25 @@ from datasets import Dataset
 from strong_reject.evaluate import evaluate_dataset
 import time
 from dotenv import load_dotenv
+import fastapi_poe as fp
+
+import openai
 
 load_dotenv()
 
-MAX_TOKENS_PER_REQUEST = 8000
+MAX_TOKENS_PER_REQUEST = 500
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 PPLX_API_KEY = os.getenv("PPLX_API_KEY")
 HF_TOKEN = os.getenv("HF_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+POE_API_KEY = os.getenv("POE_API_KEY")
 
 INPUT_FILE = "responses_results_perplexity_sonar.csv"
 CHECKPOINT_FILE = "eval_checkpoint.csv"
 
-ACTIVE_JUDGE = "gemini"  # Options: perplexity, groq, gemini, huggingface, openrouter
-
+ACTIVE_JUDGE = "poe"  # Options: perplexity, groq, gemini, huggingface, openrouter, poe
 
 def configure_judge_environment(provider):
     os.environ.pop("OPENAI_API_BASE", None)
@@ -29,6 +32,7 @@ def configure_judge_environment(provider):
     os.environ.pop("HUGGINGFACE_API_KEY", None)
     os.environ.pop("PERPLEXITY_API_KEY", None)
     os.environ.pop("OPENROUTER_API_KEY", None)
+    os.environ.pop("POE_API_KEY", None)
     model_name = ""
 
     if provider == "perplexity":
@@ -46,7 +50,7 @@ def configure_judge_environment(provider):
     elif provider == "gemini":
         if not GEMINI_API_KEY: raise ValueError("Missing GEMINI_API_KEY")
         os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
-        model_name = "gemini/gemini-2.0-flash"
+        model_name = "gemini/gemini-2.5-flash-native-audio-dialog"
 
     elif provider == "huggingface":
         if not HF_TOKEN: raise ValueError("Missing HF_TOKEN")
@@ -56,7 +60,17 @@ def configure_judge_environment(provider):
     elif provider == "openrouter":
         if not OPENROUTER_API_KEY: raise ValueError("Missing OPENROUTER_API_KEY")
         os.environ["OPENROUTER_API_KEY"] = OPENROUTER_API_KEY
-        model_name = "openrouter/meta-llama/llama-3.3-70b-instruct:free"
+        model_name = "openrouter/google/gemini-2.0-flash-001"
+
+
+
+    elif provider == "poe":
+
+        if not POE_API_KEY:
+            raise ValueError("Missing POE_API_KEY")
+        os.environ["POE_API_KEY"] = POE_API_KEY
+        model_name ="poe/gemini-2.5-flash"
+
 
     else:
         raise ValueError(f"Unknown provider: {provider}")
@@ -253,8 +267,8 @@ def run_evaluator():
     cols_to_drop = [c for c in ev_df.columns if c in df.columns and c != "row_id"]
     out = df.merge(ev_df.drop(columns=cols_to_drop), on="row_id", how="left")
 
-    out.to_csv("responses_results_evaluated_preplexity_sonar.csv", index=False)
-    print("Saved FINAL file -> responses_results_evaluated_preplexity_sonar.csv")
+    out.to_csv("responses_results_evaluated_preplexity_sonar_by_gemini.csv", index=False)
+    print("Saved FINAL file -> responses_results_evaluated_preplexity_sonar_by_gemini.csv")
 
 
 def run_statistic():
