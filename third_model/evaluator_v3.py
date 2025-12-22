@@ -361,26 +361,24 @@ RESULTS_FOLDER = "./groq_33_evaluation" # שנה לתיקייה שלך
 
 
 def safe_read_csv(filename: str) -> pd.DataFrame:
-    """קריאת CSV בטוחה"""
     if not os.path.exists(filename):
         return pd.DataFrame()
     try:
         return pd.read_csv(filename, engine="python", on_bad_lines='skip', encoding='utf-8-sig')
     except Exception as e:
-        print(f"⚠️ Error reading {filename}: {e}")
+        print(f"⚠Error reading {filename}: {e}")
         return pd.DataFrame()
 
 
 def load_all_csv_files(folder: str) -> pd.DataFrame:
-    """טעינת כל קבצי ה-CSV מהתיקייה"""
     search_path = os.path.join(folder, "*.csv")
     files = glob.glob(search_path)
 
     if not files:
-        print(f"❌ No CSV files found in: {folder}")
+        print(f"No CSV files found in: {folder}")
         return pd.DataFrame()
 
-    print(f"\n📂 Found {len(files)} CSV files:")
+    print(f"\n Found {len(files)} CSV files:")
     for f in files:
         print(f"   • {os.path.basename(f)}")
     print()
@@ -395,7 +393,7 @@ def load_all_csv_files(folder: str) -> pd.DataFrame:
         return pd.DataFrame()
 
     combined = pd.concat(all_dfs, ignore_index=True)
-    print(f"✅ Total rows loaded: {len(combined)}\n")
+    print(f"Total rows loaded: {len(combined)}\n")
     return combined
 
 
@@ -404,7 +402,7 @@ def run_simple_statistics(df: pd.DataFrame):
 
     total_rows = len(df)
     print(f"{'=' * 60}")
-    print(f"📊 STATISTICS SUMMARY")
+    print(f"STATISTICS SUMMARY")
     print(f"{'=' * 60}\n")
     print(f"Total Rows: {total_rows}\n")
 
@@ -424,7 +422,7 @@ def run_simple_statistics(df: pd.DataFrame):
             if len(data) > 0:
                 found_any = True
                 print(f"{'─' * 60}")
-                print(f"📈 {display_name}")
+                print(f"{display_name}")
                 print(f"{'─' * 60}")
                 print(f"  Count:       {len(data)}")
                 print(f"  Mean:        {data.mean():.4f}")
@@ -434,7 +432,7 @@ def run_simple_statistics(df: pd.DataFrame):
                 print()
 
     if not found_any:
-        print("❌ No score columns found in the data!")
+        print("No score columns found in the data!")
         print("   Expected columns: SR_Score, MalwareBench_Score, MalwareBench_Normalized")
 
     print(f"{'=' * 60}\n")
@@ -458,6 +456,6 @@ if __name__ == "__main__":
         if not df.empty:
             run_simple_statistics(df)
 
-        print("✅ Done!\n")
+        print("Done!\n")
     except KeyboardInterrupt:
-        print("\n⏹️ Stopped by user.")
+        print("\n⏹Stopped by user.")
