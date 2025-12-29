@@ -35,8 +35,8 @@ load_dotenv()
 
 # --- PROVIDER SELECTION ---
 # Change this string to switch providers easily.
-# Options: "groq_llama-3.1", "groq_llama-3.3", "gemini", "perplexity", "poe", "huggingface"
-CURRENT_PROVIDER = "groq_llama-3.3"
+# Options: "groq_llama-3.1", "groq_llama-3.3", "gemini", "perplexity", "huggingface" , "gpt", "openrouter"
+CURRENT_PROVIDER = "openrouter"
 
 # Input/Output Files
 INPUT_FILE = "responses_results_groq-3.1_llama-3.1-8b-instant.csv"
@@ -54,6 +54,8 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 PPLX_API_KEY = os.getenv("PPLX_API_KEY")
 HF_TOKEN = os.getenv("HF_TOKEN")
+OPEN_AI_KEY = os.getenv("OPENAI_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # ==============================
 # 3. LOGGING (FILE ONLY)
@@ -157,13 +159,24 @@ def configure_environment(provider_key: str) -> str:
     elif provider_key == "gemini":
         if not GEMINI_API_KEY: raise ValueError("Missing GEMINI_API_KEY")
         os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY
-        model_name = "gemini/gemini-1.5-flash"
-
+        model_name = "gemini/gemini-2.5-flash"
 
     elif provider_key == "huggingface":
         if not HF_TOKEN: raise ValueError("Missing HF_TOKEN")
         os.environ["HUGGINGFACE_API_KEY"] = HF_TOKEN
         model_name = "huggingface/meta-llama/Meta-Llama-3-70B-Instruct"
+
+    elif provider_key == "gpt":
+        if not OPEN_AI_KEY: raise ValueError("Missing OPEN_AI_KEY")
+        os.environ["OPENAI_API_KEY"] = OPEN_AI_KEY
+        model_name = "openai/gpt-3.5-turbo"
+
+
+    elif provider_key == "openrouter":
+        if not OPENROUTER_API_KEY: raise ValueError("Missing OPENROUTER_API_KEY")
+        os.environ["OPENROUTER_API_KEY"] = OPENROUTER_API_KEY
+        model_name = "openrouter/anthropic/claude-3.5-sonnet"
+
 
     else:
         print(f" Error: Unknown provider '{provider_key}'")
@@ -356,8 +369,6 @@ def run_one_by_one_pipeline():
 # CONFIGURATION
 # ==============================
 
-# תיקייה לניתוח
-RESULTS_FOLDER = "./groq_33_evaluation" # שנה לתיקייה שלך
 
 
 def safe_read_csv(filename: str) -> pd.DataFrame:
@@ -398,8 +409,6 @@ def load_all_csv_files(folder: str) -> pd.DataFrame:
 
 
 def run_simple_statistics(df: pd.DataFrame):
-    """חישוב סטטיסטיקות פשוטות: ממוצע וסטיית תקן"""
-
     total_rows = len(df)
     print(f"{'=' * 60}")
     print(f"STATISTICS SUMMARY")
@@ -438,24 +447,32 @@ def run_simple_statistics(df: pd.DataFrame):
     print(f"{'=' * 60}\n")
 
 
+def run_statistics():
+
+
+    print("\n" + "=" * 60)
+    print("SIMPLE CSV STATISTICS ANALYZER")
+    print("=" * 60)
+
+    # בקש תיקייה מהמשתמש
+    folder = input(f"\nEnter folder path (or press Enter for '{RESULTS_FOLDER}'): ").strip()
+    if not folder:
+        folder = RESULTS_FOLDER
+
+    # טען את כל קבצי ה-CSV
+    df = load_all_csv_files(folder)
+
+    if not df.empty:
+        run_simple_statistics(df)
+
+
 if __name__ == "__main__":
     try:
-        #run_one_by_one_pipeline()
-        print("\n" + "=" * 60)
-        print("SIMPLE CSV STATISTICS ANALYZER")
-        print("=" * 60)
+        run_one_by_one_pipeline()
 
-        # בקש תיקייה מהמשתמש
-        folder = input(f"\nEnter folder path (or press Enter for '{RESULTS_FOLDER}'): ").strip()
-        if not folder:
-            folder = RESULTS_FOLDER
-
-        # טען את כל קבצי ה-CSV
-        df = load_all_csv_files(folder)
-
-        if not df.empty:
-            run_simple_statistics(df)
+        RESULTS_FOLDER = "./gemini"
+        #run_statistics()
 
         print("Done!\n")
     except KeyboardInterrupt:
-        print("\n⏹Stopped by user.")
+        print("\nStopped by user.")
