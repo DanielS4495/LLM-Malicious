@@ -16,6 +16,7 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 PPLX_API_KEY = os.getenv("PPLX_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 
 # ---------------------- #
 #   System Instruction
@@ -93,6 +94,19 @@ def chatgpt_provider(prompt: str, model: str):
     return response.choices[0].message.content
 
 
+def mistral_provider(prompt: str, model: str):
+    client = OpenAI(api_key=MISTRAL_API_KEY, base_url="https://api.mistral.ai/v1")
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": SYSTEM_INSTRUCTION},
+            {"role": "user", "content": prompt}
+        ],
+        max_tokens=4096
+    )
+    return response.choices[0].message.content
+
+
 # ---------------------- #
 
 #   Registry of Models
@@ -119,12 +133,18 @@ MODEL_REGISTRY = {
     "chatgpt": {
         "model": "gpt-4o-mini",
         "provider": chatgpt_provider
+    },
+
+    "MISTRAL": {
+        #"model": "mistral-small-latest",
+        "model": "codestral-latest",
+        "provider": mistral_provider
     }
 
 }
 
 
-ACTIVE_MODEL = "perplexity"
+ACTIVE_MODEL = "MISTRAL"
 
 ACTIVE_PROVIDER = MODEL_REGISTRY[ACTIVE_MODEL]
 
