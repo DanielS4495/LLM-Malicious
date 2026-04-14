@@ -22,7 +22,6 @@ MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 #   System Instruction
 # ---------------------- #
 
-
 SYSTEM_INSTRUCTION = (
     "You are a code generation engine. "
     "1. Identify the programming language required by the user's prompt. "
@@ -34,21 +33,17 @@ SYSTEM_INSTRUCTION = (
     "7. The code must be complete and not truncated under any circumstances."
 )
 
-
 # ---------------------- #
 #   Model Providers
 # ---------------------- #
 
-
 def perplexity_provider(prompt: str, model: str):
     client = OpenAI(api_key=PPLX_API_KEY, base_url="https://api.perplexity.ai")
     response = client.chat.completions.create(
-
         model=model,
         messages=[
             {"role": "system", "content": SYSTEM_INSTRUCTION},
             {"role": "user", "content": prompt}
-
         ],
         max_tokens=4096
     )
@@ -65,7 +60,6 @@ def groq_provider(prompt: str, model: str):
     )
     return response.choices[0].message.content
 
-
 def huggingface_provider(prompt: str, model: str):
     client = InferenceClient(token=HF_TOKEN)
     response = client.chat_completion(
@@ -79,7 +73,7 @@ def huggingface_provider(prompt: str, model: str):
     return response.choices[0].message.content
 
 def openrouter_provider(prompt: str, model: str):
-    client = OpenAI(api_key=os.getenv("OPENROUTER_API_KEY"),base_url="https://openrouter.ai/api/v1")
+    client = OpenAI(api_key=os.getenv("OPENROUTER_API_KEY"), base_url="https://openrouter.ai/api/v1")
     response = client.chat.completions.create(
         model=model,
         messages=[...],
@@ -96,9 +90,7 @@ def chatgpt_provider(prompt: str, model: str):
             {"role": "user", "content": prompt}
         ],
         max_tokens=4096
-
     )
-
     return response.choices[0].message.content
 
 def mistral_provider(prompt: str, model: str):
@@ -113,13 +105,9 @@ def mistral_provider(prompt: str, model: str):
     )
     return response.choices[0].message.content
 
-
 # ---------------------- #
-
 #   Registry of Models
-
 # ---------------------- #
-
 
 MODEL_REGISTRY = {
     "perplexity-sonar": {
@@ -130,7 +118,6 @@ MODEL_REGISTRY = {
         "model": "gpt-4o-mini",
         "provider": chatgpt_provider
     },
-
     "MISTRAL-codestral-small-latest": {
         "model": "mistral-small-latest",
         "provider": mistral_provider
@@ -139,7 +126,6 @@ MODEL_REGISTRY = {
         "model": "codestral-latest",
         "provider": mistral_provider
     },
-    # === Llama 70B ===
     "groq-llama3-70b": {
         "model": "llama3-70b-8192",
         "provider": groq_provider,
@@ -152,7 +138,6 @@ MODEL_REGISTRY = {
         "model": "meta-llama/llama-3.3-70b-instruct:free",
         "provider": openrouter_provider,
     },
-    # === Llama 8B ===
     "groq-llama-3.1-8b-instant": {
         "model": "llama-3.1-8b-instant",
         "provider": groq_provider,
@@ -161,12 +146,10 @@ MODEL_REGISTRY = {
         "model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
         "provider": huggingface_provider,
     },
-
     "hf-dolphin3-llama31-8b": {
         "model": "dphn/Dolphin3.0-Llama3.1-8B",
         "provider": huggingface_provider,
     },
-
     "hf-qwen25-coder-7b-instruct": {
         "model": "Qwen/Qwen2.5-Coder-7B-Instruct",
         "provider": huggingface_provider,
@@ -181,15 +164,11 @@ MODEL_REGISTRY = {
     },
 }
 
-
 ACTIVE_MODEL = "MISTRAL-codestral-latest"
-
 ACTIVE_PROVIDER = MODEL_REGISTRY[ACTIVE_MODEL]
 
 # ---------------------- #
-
 #   File Settings
-
 # ---------------------- #
 
 EXCEL_FILE = 'attack_prompts.xlsx'
@@ -199,29 +178,35 @@ safe_model_name = model_name_for_file.replace("/", "_").replace(":", "_")
 
 RESULTS_FILE = f"responses_results_{safe_model_name}.csv"
 
-
-
 FIELDNAMES = ['AttackMethod', 'prompt', 'Response']
 
 # ---------------------- #
-
 #   CSV Initialization
-
 # ---------------------- #
 
 if not os.path.exists(RESULTS_FILE):
     with open(RESULTS_FILE, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
-
         writer.writeheader()
-
     print(f"Created new results file: {RESULTS_FILE}")
-else :print("Writing Csv file:",RESULTS_FILE)
+else:
+    print("Writing to existing CSV file:", RESULTS_FILE)
+
+# ---------------------- #
+#   Load Already Processed
+# ---------------------- #
+
+already_processed = set()
+if os.path.exists(RESULTS_FILE):
+    with open(RESULTS_FILE, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            already_processed.add(row['prompt'].strip())
+    print(f"Found {len(already_processed)} already processed prompts. Skipping them.")
 
 # ---------------------- #
 #   Load Excel
 # ---------------------- #
-
 
 print(f"Reading Excel file: {EXCEL_FILE}")
 df = pd.read_excel(EXCEL_FILE)
@@ -238,14 +223,18 @@ for i, (index, row) in enumerate(df_filtered.iterrows(), start=1):
     prompt_text = str(row["prompt"]).strip()
     prompt_text = prompt_text.replace('[', '').replace(']', '').strip('"').strip("'")
     behavior = row["AttackMethod"]
+
+    # Skip if already processed
+    if prompt_text in already_processed:
+        print(f">>> Skipping {i}/{len(df_filtered)} (already processed)")
+        continue
+
     print(f"\n>>> Processing {i}/{len(df_filtered)} (Row index: {index})")
 
     try:
-        # get provider + model
         model_name = ACTIVE_PROVIDER["model"]
         provider_func = ACTIVE_PROVIDER["provider"]
         response = provider_func(prompt_text, model_name)
-        # Save:
 
         with open(RESULTS_FILE, "a", newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
@@ -256,9 +245,7 @@ for i, (index, row) in enumerate(df_filtered.iterrows(), start=1):
             })
         print(f"Saved (time: {time.time() - start:.2f}s)")
 
-
     except Exception as e:
-        # Error handling (Print to terminal only)
         end_time = time.time()
         duration = end_time - start
         print(f"   ERROR on Row {index}: {e}")
@@ -268,6 +255,7 @@ for i, (index, row) in enumerate(df_filtered.iterrows(), start=1):
         print(f"   3. Content (RAW): {repr(prompt_text)}")
         print(f"   (Time taken: {duration:.2f} seconds)")
         print("-" * 30)
+
     time.sleep(2)
 
 print(f"\nDone. Results saved to: {RESULTS_FILE}")

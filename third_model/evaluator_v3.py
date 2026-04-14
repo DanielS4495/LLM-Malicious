@@ -36,8 +36,8 @@ load_dotenv()
 # --- PROVIDER SELECTION ---
 # Change this string to switch providers easily.
 # Options: "groq_llama-3.1", "groq_llama-3.3", "groq_llama-4-scout",
-#          "gemini", "perplexity", "huggingface", "gpt", "openrouter", "ollama","MISTRAL"
-CURRENT_PROVIDER = "MISTRAL"
+#          "gemini", "perplexity", "huggingface", "gpt", "openrouter", "ollama","MISTRAL","vllm_local"
+CURRENT_PROVIDER = "vllm_local"
 
 # Input/Output Files
 INPUT_FILE = "responses_results_MISTRAL_codestral-latest.csv"
@@ -188,6 +188,10 @@ def configure_environment(provider_key: str) -> str:
         os.environ["OPENAI_API_BASE"] = "http://localhost:11434/v1"
         model_name = "openai/llama3.3:70b"
 
+    elif provider_key == "vllm_local":
+        os.environ["OPENAI_API_KEY"] = "dummy"
+        os.environ["OPENAI_API_BASE"] = "http://localhost:8000/v1"
+        model_name = "Qwen/Qwen2.5-Coder-3B-Instruct-AWQ"
 
     elif provider_key == "MISTRAL":
         if not MISTRAL_API_KEY: raise ValueError("Missing MISTRAL_API_KEY")

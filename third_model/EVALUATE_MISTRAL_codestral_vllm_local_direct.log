@@ -1,0 +1,6 @@
+2026-02-21 21:43:02,758 [INFO] 
+LiteLLM completion() model= hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4; provider = openai
+2026-02-21 21:43:06,280 [INFO] 
+LiteLLM completion() model= hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4; provider = openai
+2026-02-21 21:43:08,338 [INFO] 
+LiteLLM completion() model= hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4; provider = openai
