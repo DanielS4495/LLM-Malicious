@@ -37,7 +37,7 @@ load_dotenv()
 # Change this string to switch providers easily.
 # Options: "groq_llama-3.1", "groq_llama-3.3", "groq_llama-4-scout",
 #          "gemini", "perplexity", "huggingface", "gpt", "openrouter", "ollama","MISTRAL"
-CURRENT_PROVIDER = "MISTRAL"
+CURRENT_PROVIDER = "groq_llama-3.1"
 
 # Input/Output Files
 INPUT_FILE = "responses_results_codestral-latest.csv"
@@ -518,7 +518,7 @@ def run_one_by_one_pipeline():
             print(f"\nError saving row {i + 1}")
 
         # Rate Limit Sleep
-        time.sleep(random.uniform(0.5, 1.5))
+        time.sleep(10)
 
     print(f"\nDone! Results saved to {CHECKPOINT_FILE}")
 
@@ -528,230 +528,11 @@ def run_one_by_one_pipeline():
     print(f"Final file created: {FINAL_OUTPUT_FILE}")
 
 
-# ==============================
-# 8. STATISTICS FUNCTIONS
-# ==============================
-
-def load_all_csv_files(folder: str) -> pd.DataFrame:
-    search_path = os.path.join(folder, "*.csv")
-    files = glob.glob(search_path)
-
-    if not files:
-        print(f"No CSV files found in: {folder}")
-        return pd.DataFrame()
-
-    print(f"\n✅ Found {len(files)} CSV files:")
-    for f in files:
-        print(f"   • {os.path.basename(f)}")
-    print()
-
-    all_dfs = []
-    for file in files:
-        df = safe_read_csv(file)
-        if not df.empty:
-            all_dfs.append(df)
-
-    if not all_dfs:
-        return pd.DataFrame()
-
-    combined = pd.concat(all_dfs, ignore_index=True)
-    print(f"Total rows loaded: {len(combined)}\n")
-    return combined
-
-
-def run_simple_statistics(df: pd.DataFrame, file_name: str = "Combined"):
-    total_rows = len(df)
-    print(f"{'=' * 60}")
-    print(f"STATISTICS: {file_name}")
-    print(f"{'=' * 60}\n")
-    print(f"Total Rows: {total_rows}\n")
-
-    score_columns = {
-        'SR_Score': 'StrongReject Score',
-        'MalwareBench_Normalized': 'MalwareBench Normalized (0-1)'
-    }
-
-    found_any = False
-
-    for col, display_name in score_columns.items():
-        if col in df.columns:
-            data = df[col].dropna()
-
-            if len(data) > 0:
-                found_any = True
-                print(f"{'─' * 60}")
-                print(f"{display_name}")
-                print(f"{'─' * 60}")
-                print(f"  Count:       {len(data)}")
-                print(f"  Mean:        {data.mean():.4f}")
-                print(f"  Std Dev:     {data.std():.4f}")
-                print(f"  Min:         {data.min():.4f}")
-                print(f"  Max:         {data.max():.4f}")
-                print()
-
-    if not found_any:
-        print("No score columns found in the data!")
-        print("   Expected columns: SR_Score, MalwareBench_Score, MalwareBench_Normalized")
-
-    print(f"{'=' * 60}\n")
-
-
-def statistics_per_file(folder: str):
-    csv_files = glob.glob(os.path.join(folder, "*.csv"))
-
-    if not csv_files:
-        print(f"\nNo CSV files found in: {folder}")
-        return
-
-    print(f"\nFound {len(csv_files)} CSV files\n")
-
-    for csv_file in sorted(csv_files):
-        file_name = os.path.basename(csv_file)
-        try:
-            df = pd.read_csv(csv_file)
-            run_simple_statistics(df, file_name)
-        except Exception as e:
-            print(f"Error reading {file_name}: {e}\n")
-
-
-def statistics_combined(folder: str):
-    df = load_all_csv_files(folder)
-
-    if not df.empty:
-        run_simple_statistics(df, "All Files Combined")
-    else:
-        print(f"\nNo data loaded from: {folder}")
-
-
-def compare_folders():
-    """Compare two folders - consistency and metrics"""
-    print("\n" + "=" * 80)
-    print("COMPARE TWO FOLDERS")
-    print("=" * 80)
-
-    folder1 = input("\nEnter first folder path: ").strip()
-    folder2 = input("Enter second folder path: ").strip()
-
-    name1 = input("Name for folder 1 (e.g., 'GPT-4'): ").strip() or "Folder 1"
-    name2 = input("Name for folder 2 (e.g., 'Claude'): ").strip() or "Folder 2"
-
-    df1 = load_all_csv_files(folder1)
-    df2 = load_all_csv_files(folder2)
-
-    if df1.empty or df2.empty:
-        print("\nOne or both folders have no data!")
-        return
-
-    print(f"\n{'=' * 80}")
-    print(f"COMPARISON: {name1} vs {name2}")
-    print(f"{'=' * 80}")
-    print(f"{name1}: {len(df1)} rows")
-    print(f"{name2}: {len(df2)} rows\n")
-
-    score_columns = {
-        'SR_Score': 'StrongReject Score',
-        'MalwareBench_Score': 'MalwareBench Score (1-10)',
-        'MalwareBench_Normalized': 'MalwareBench Normalized (0-1)'
-    }
-
-    for col, display_name in score_columns.items():
-        if col in df1.columns and col in df2.columns:
-            data1 = df1[col].dropna()
-            data2 = df2[col].dropna()
-
-            if len(data1) > 0 and len(data2) > 0:
-                mean1 = data1.mean()
-                std1 = data1.std()
-                mean2 = data2.mean()
-                std2 = data2.std()
-
-                # Coefficient of Variation
-                cv1 = (std1 / mean1) * 100 if mean1 != 0 else 0
-                cv2 = (std2 / mean2) * 100 if mean2 != 0 else 0
-
-                print(f"{'─' * 80}")
-                print(f"{display_name}")
-                print(f"{'─' * 80}")
-
-                # Comparison table
-                print(f"\n{'Metric':<20} {name1:>15} {name2:>15} {'Winner':>15}")
-                print(f"{'-' * 70}")
-                print(f"{'Mean':<20} {mean1:>15.4f} {mean2:>15.4f} {name1 if mean1 > mean2 else name2:>15}")
-                print(f"{'Std Dev':<20} {std1:>15.4f} {std2:>15.4f} {name1 if std1 < std2 else name2:>15} (better)")
-                print(f"{'CV (%)':<20} {cv1:>15.2f} {cv2:>15.2f} {name1 if cv1 < cv2 else name2:>15}")
-                print(f"{'Min':<20} {data1.min():>15.4f} {data2.min():>15.4f}")
-                print(f"{'Max':<20} {data1.max():>15.4f} {data2.max():>15.4f}")
-
-                # Consistency analysis
-                print(f"\nConsistency Analysis:")
-                std_diff_pct = abs(std1 - std2) / max(std1, std2) * 100
-
-                if std_diff_pct < 5:
-                    print(f"   → Similar consistency between both models")
-                elif std1 < std2:
-                    print(f"   → {name1} is {std_diff_pct:.1f}% MORE CONSISTENT")
-                    print(f"   → {name1} gives more predictable responses")
-                else:
-                    print(f"   → {name2} is {std_diff_pct:.1f}% MORE CONSISTENT")
-                    print(f"   → {name2} gives more predictable responses")
-
-                # Mean analysis
-                mean_diff = mean2 - mean1
-                mean_diff_pct = (mean_diff / mean1) * 100 if mean1 != 0 else 0
-                print(f"\nMean Analysis:")
-                print(f"   → Difference: {mean_diff:+.4f} ({mean_diff_pct:+.2f}%)")
-
-                print("\n")
-
-
-def run_statistics():
-    RESULTS_FOLDER = "./third_model"
-
-    while True:
-        print("\n" + "=" * 60)
-        print("STATISTICS MENU")
-        print("=" * 60)
-        print("1. Statistics per file (separate for each CSV)")
-        print("2. Combined statistics (all CSVs together)")
-        print("3. Compare two folders")
-        print("4. Exit")
-
-        choice = input("\nEnter choice (1-4): ").strip()
-
-        if choice == "1":
-            print("\n" + "=" * 60)
-            print("STATISTICS PER FILE")
-            print("=" * 60)
-            folder = input(f"\nEnter folder path (or press Enter for '{RESULTS_FOLDER}'): ").strip()
-            if not folder:
-                folder = RESULTS_FOLDER
-            statistics_per_file(folder)
-
-        elif choice == "2":
-            print("\n" + "=" * 60)
-            print("COMBINED STATISTICS")
-            print("=" * 60)
-            folder = input(f"\nEnter folder path (or press Enter for '{RESULTS_FOLDER}'): ").strip()
-            if not folder:
-                folder = RESULTS_FOLDER
-            statistics_combined(folder)
-
-        elif choice == "3":
-            compare_folders()
-
-        elif choice == "4":
-            print("\nGoodbye!\n")
-            break
-
-        else:
-            print("\nInvalid choice! Please enter 1-4")
-
 
 if __name__ == "__main__":
     try:
         run_one_by_one_pipeline()
 
-        #run_statistics()
 
         print("\nDone!\n")
     except KeyboardInterrupt:
