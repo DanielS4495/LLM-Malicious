@@ -37,11 +37,11 @@ load_dotenv()
 # Change this string to switch providers easily.
 # Options: "groq_llama-3.1", "groq_llama-3.3", "groq_llama-4-scout",
 #          "gemini", "perplexity", "huggingface", "gpt", "openrouter", "ollama","MISTRAL"
-CURRENT_PROVIDER = "groq_llama-3.1"
+CURRENT_PROVIDER = "huggingface"
 
 # Input/Output Files
-INPUT_FILE = "responses_results_codestral-latest.csv"
-TARGET_MODEL_NAME = "MISTRAL_codestral"
+INPUT_FILE = "responses/responses_results_mistral-small-latest_2.csv"
+TARGET_MODEL_NAME = "MISTRAL_small-latest"
 SAFE_NAME = TARGET_MODEL_NAME.replace('/', '-')
 CHECKPOINT_FILE = f"EVALUATE_{SAFE_NAME}_{CURRENT_PROVIDER}_checkpoint.csv"
 FINAL_OUTPUT_FILE = f"EVALUATE_{SAFE_NAME}_{CURRENT_PROVIDER}_final.csv"
