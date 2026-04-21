@@ -59,6 +59,7 @@ try:
     import matplotlib.pyplot as plt
     import matplotlib.gridspec as gridspec
     import matplotlib.ticker as mticker
+    import matplotlib.patches as mpatches
     from matplotlib.colors import LinearSegmentedColormap
     HAS_MPL = True
 except ImportError:
@@ -681,8 +682,8 @@ def layer7_stability(df: pd.DataFrame, out: Path, plots: Path) -> dict:
         _cv   = _std / _mean if _mean != 0 else 0.0
         result[col] = {
             "score":             col,
-            "output_variance":   round(s.var(), 6),
-            "output_std":        round(_std, 6),
+            "output_variance":   round(s.var(), 5),
+            "output_std":        round(_std, 5),
             "consistency_score": round(1 / (1 + _cv), 4),
             "cv_pct":            round(_cv * 100, 2) if _mean != 0 else np.nan,
             "n_near_zero":       int((s < 0.05).sum()),
@@ -848,7 +849,7 @@ def layer12_drift(df: pd.DataFrame, stability_data: dict, out: Path, plots: Path
                                 "decreasing" if drift_delta < -0.02 else "stable",
             "drift_significant": drift_significant,
             "mw_statistic":     round(float(mw_stat), 4) if mw_stat is not None else None,
-            "mw_p_value":       round(float(mw_p), 6)    if mw_p    is not None else None,
+            "mw_p_value":       round(float(mw_p), 5)    if mw_p    is not None else None,
             "note": "Mann-Whitney U p<0.05 -- drift is statistically significant"
                     if drift_significant else "No statistically significant drift detected",
         })
@@ -1051,7 +1052,7 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
                     "model_A": n1, "model_B": n2,
                     "test":    "Mann-Whitney U",
                     "statistic": round(float(stat), 4),
-                    "p_value":   round(float(p), 6),
+                    "p_value":   round(float(p), 5),
                     "significant_005": p < 0.05,
                     "significant_001": p < 0.01,
                     "interpretation": (
@@ -1099,7 +1100,7 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
                         "model_B":         n2,
                         "test":            "Mann-Whitney U",
                         "statistic":       round(float(_stat), 4),
-                        "p_value":         round(float(_p), 6),
+                        "p_value":         round(float(_p), 5),
                         "significant_005": _p < 0.05,
                         "significant_001": _p < 0.01,
                         "interpretation": (
@@ -1167,11 +1168,6 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
                     for sc in score_values
                 }
 
-            nonzero_scores = [
-                sc for sc in score_values
-                if any(pct_matrix[m].get(sc, 0) > 0 for m in models_ordered)
-            ]
-
             fig, ax = plt.subplots(figsize=(max(8, len(models_ordered) * 2.5), 7))
             fig.suptitle(
                 "MalwareBench 2.0 Score Distribution by Target Model (100% Stacked)",
@@ -1182,21 +1178,24 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
             bottom = np.zeros(len(models_ordered))
             cmap   = plt.cm.plasma
 
-            for sc in nonzero_scores:
-                heights = np.array([pct_matrix[m].get(sc, 0) for m in models_ordered])
-                color   = cmap(sc / 10)
-                bars    = ax.bar(x, heights, bottom=bottom, color=color,
-                                 label=str(sc), edgecolor="white", linewidth=0.3)
-                for bar, h, b in zip(bars, heights, bottom):
-                    if h > 8:
-                        ax.text(
-                            bar.get_x() + bar.get_width() / 2,
-                            b + h / 2,
-                            f"{h:.1f}%",
-                            ha="center", va="center",
-                            fontsize=8, fontweight="bold", color="black"
-                        )
-                bottom += heights
+            legend_handles = []
+            for sc in score_values:
+                color = cmap(sc / 10)
+                legend_handles.append(mpatches.Patch(color=color, label=str(sc)))
+                for mi, model in enumerate(models_ordered):
+                    h = pct_matrix[model].get(sc, 0)
+                    if h > 0:
+                        ax.bar(x[mi], h, bottom=bottom[mi], color=color,
+                               edgecolor="white", linewidth=0.3)
+                        if h > 8:
+                            ax.text(
+                                x[mi],
+                                bottom[mi] + h / 2,
+                                f"{h:.1f}%",
+                                ha="center", va="center",
+                                fontsize=8, fontweight="bold", color="black"
+                            )
+                        bottom[mi] += h
 
             ax.set_xticks(x)
             ax.set_xticklabels(models_ordered, rotation=30, ha="right", fontsize=9)
@@ -1204,6 +1203,7 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
             ax.set_ylim(0, 100)
             ax.set_xlabel("Target Model")
             legend = ax.legend(
+                handles=legend_handles,
                 title="MB 2.0 Score (0-10)", bbox_to_anchor=(1.05, 1),
                 loc="upper left", fontsize=8
             )
@@ -1244,23 +1244,26 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
                         fontsize=13, fontweight="bold"
                     )
 
-                    x_vt     = np.arange(len(vc_models))
-                    btm_vt   = np.zeros(len(vc_models))
+                    x_vt   = np.arange(len(vc_models))
+                    btm_vt = np.zeros(len(vc_models))
 
+                    legend_handles_vt = []
                     for bkt, bkt_color in zip(bucket_order, bucket_colors):
-                        heights_vt = np.array([pct_vc[m].get(bkt, 0) for m in vc_models])
-                        bars_vt = ax_vt.bar(x_vt, heights_vt, bottom=btm_vt, color=bkt_color,
-                                            label=bkt, edgecolor="white", linewidth=0.3)
-                        for bar_vt, h_vt, b_vt in zip(bars_vt, heights_vt, btm_vt):
-                            if h_vt > 8:
-                                ax_vt.text(
-                                    bar_vt.get_x() + bar_vt.get_width() / 2,
-                                    b_vt + h_vt / 2,
-                                    f"{h_vt:.1f}%",
-                                    ha="center", va="center",
-                                    fontsize=8, fontweight="bold", color="black"
-                                )
-                        btm_vt += heights_vt
+                        legend_handles_vt.append(mpatches.Patch(color=bkt_color, label=bkt))
+                        for mi_vt, mdl_vt in enumerate(vc_models):
+                            h_vt = pct_vc[mdl_vt].get(bkt, 0)
+                            if h_vt > 0:
+                                ax_vt.bar(x_vt[mi_vt], h_vt, bottom=btm_vt[mi_vt],
+                                          color=bkt_color, edgecolor="white", linewidth=0.3)
+                                if h_vt > 8:
+                                    ax_vt.text(
+                                        x_vt[mi_vt],
+                                        btm_vt[mi_vt] + h_vt / 2,
+                                        f"{h_vt:.1f}%",
+                                        ha="center", va="center",
+                                        fontsize=8, fontweight="bold", color="black"
+                                    )
+                                btm_vt[mi_vt] += h_vt
 
                     ax_vt.set_xticks(x_vt)
                     ax_vt.set_xticklabels(vc_models, rotation=30, ha="right", fontsize=9)
@@ -1268,6 +1271,7 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
                     ax_vt.set_ylim(0, 100)
                     ax_vt.set_xlabel("Target Model")
                     lgnd_vt = ax_vt.legend(
+                        handles=legend_handles_vt,
                         title="Malicious Count Bucket", bbox_to_anchor=(1.05, 1),
                         loc="upper left", fontsize=8
                     )
@@ -1362,7 +1366,7 @@ def benchmark_comparison(df: pd.DataFrame, benchmark_path: str | None,
             "bench_std":       round(bench_s.std(), 4),
             "delta_mean":      round(model_s.mean() - bench_s.mean(), 4),
             "mw_statistic":    round(float(stat), 4) if not np.isnan(float(stat)) else np.nan,
-            "mw_p_value":      round(float(p), 6) if not np.isnan(float(p)) else np.nan,
+            "mw_p_value":      round(float(p), 5) if not np.isnan(float(p)) else np.nan,
             "significantly_different": float(p) < 0.05 if not np.isnan(float(p)) else None,
         })
 
@@ -1601,7 +1605,21 @@ def generate_html_report(out: Path, plots: Path, meta: dict):
 
     sections_html = ""
     for title, csv_path in layers:
-        sections_html += f"""
+        if title == "Layer 15 -- Top 10 Worst Cases":
+            sections_html += f"""
+        <section>
+            <h2>{title}
+                <button onclick="toggleWorstCases()" id="wc-btn"
+                    style="margin-left:1rem;padding:0.2rem 0.7rem;font-size:0.75rem;
+                           background:#21262d;color:#58a6ff;border:1px solid #30363d;
+                           border-radius:4px;cursor:pointer;">Enlarge</button>
+            </h2>
+            <div id="worst-cases-wrap" style="max-height:120px;overflow:hidden;transition:max-height 0.3s ease;">
+                {csv_table(csv_path)}
+            </div>
+        </section>"""
+        else:
+            sections_html += f"""
         <section>
             <h2>{title}</h2>
             {csv_table(csv_path)}
@@ -1654,6 +1672,19 @@ def generate_html_report(out: Path, plots: Path, meta: dict):
   footer {{ margin-top: 3rem; border-top: 1px solid var(--border);
             padding-top: 1rem; color: #8b949e; font-size: 0.75rem; }}
 </style>
+<script>
+  function toggleWorstCases() {{
+    var wrap = document.getElementById('worst-cases-wrap');
+    var btn  = document.getElementById('wc-btn');
+    if (wrap.style.maxHeight === 'none') {{
+      wrap.style.maxHeight = '120px';
+      btn.textContent = 'Enlarge';
+    }} else {{
+      wrap.style.maxHeight = 'none';
+      btn.textContent = 'Reduce';
+    }}
+  }}
+</script>
 </head>
 <body>
 <header>
@@ -1787,6 +1818,9 @@ def main():
     print("✅ TASK 2 COMPLETE -- Layer 4: exactly two distribution figures retained; threshold sensitivity and box plot removed")
     print("✅ TASK 3 COMPLETE -- All user-facing 'MalwareBench' strings updated to 'MalwareBench 2.0'")
     print("\n✅ PART 8 COMPLETE -- all fixes implemented")
+    print("\n✅ TASK 1 COMPLETE -- All round(..., 6) reduced to round(..., 5); no number displayed with more than 5 decimal places")
+    print("✅ TASK 2 COMPLETE -- Stacked bar charts: full legend retained (all theoretical buckets), zero-height segments skipped per model")
+    print("\n✅ PART 10 COMPLETE — Number precision and clean stacked bars implemented.")
 
 
 if __name__ == "__main__":
