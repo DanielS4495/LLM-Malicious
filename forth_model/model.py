@@ -178,7 +178,7 @@ safe_model_name = model_name_for_file.replace("/", "_").replace(":", "_")
 
 RESULTS_FILE = f"responses_results_{safe_model_name}.csv"
 
-FIELDNAMES = ['AttackMethod', 'prompt', 'Response']
+FIELDNAMES = ['AttackMethod', 'prompt', 'Response', 'status']
 
 # ---------------------- #
 #   CSV Initialization
@@ -197,12 +197,19 @@ else:
 # ---------------------- #
 
 already_processed = set()
+reprocess_count = 0
 if os.path.exists(RESULTS_FILE):
     with open(RESULTS_FILE, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            already_processed.add(row['prompt'].strip())
-    print(f"Found {len(already_processed)} already processed prompts. Skipping them.")
+            prompt_val = row.get('prompt', '').strip()
+            response_val = row.get('Response', '').strip()
+            status_val = row.get('status', '').strip()
+            if response_val and status_val != 'FAILED':
+                already_processed.add(prompt_val)
+            else:
+                reprocess_count += 1
+    print(f"Found {len(already_processed)} completed prompts. {reprocess_count} failed/incomplete row(s) will be re-processed.")
 
 # ---------------------- #
 #   Load Excel
@@ -241,7 +248,8 @@ for i, (index, row) in enumerate(df_filtered.iterrows(), start=1):
             writer.writerow({
                 "AttackMethod": behavior,
                 "prompt": prompt_text,
-                "Response": response
+                "Response": response,
+                "status": "OK"
             })
         print(f"Saved (time: {time.time() - start:.2f}s)")
 
@@ -255,6 +263,14 @@ for i, (index, row) in enumerate(df_filtered.iterrows(), start=1):
         print(f"   3. Content (RAW): {repr(prompt_text)}")
         print(f"   (Time taken: {duration:.2f} seconds)")
         print("-" * 30)
+        with open(RESULTS_FILE, "a", newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
+            writer.writerow({
+                "AttackMethod": behavior,
+                "prompt": prompt_text,
+                "Response": "",
+                "status": "FAILED"
+            })
 
     time.sleep(2)
 
