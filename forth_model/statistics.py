@@ -113,15 +113,50 @@ DASH_PALETTE = ["#7c3aed", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#ec4899"
 # ==============================================================================
 
 class DataLoader:
-    """Loads one or many CSV files, tags each row with source model.
+    """
+    Load one or many evaluation CSV files and prepare a combined DataFrame
+    for statistical analysis.
 
-    One file == one model, always. Model name comes from the filename stem
-    with the leading EVALUATE_ prefix stripped (case-insensitive). The
-    target_model column in each frame is overwritten with this name so all
-    downstream code uses it consistently.
+    One file always maps to one model. The model name is derived from the
+    filename stem by stripping the leading "EVALUATE_" prefix
+    (case-insensitive). The target_model column in each loaded frame is
+    overwritten with this derived name so all downstream layers use it
+    consistently.
+
+    After loading, a completeness filter removes any model whose frame has
+    fewer than 85% of rows with a non-empty response string. Derived columns
+    (binary label, character-based token approximations, parsed timestamps)
+    are added to self.combined.
+
+    Attributes:
+        frames (list[pd.DataFrame]): Per-model DataFrames that passed the
+            completeness filter. Index-aligned with model_names.
+        model_names (list[str]): Model name strings derived from file paths,
+            index-aligned with frames.
+        combined (pd.DataFrame): Concatenation of all frames with derived
+            columns added.
+        threshold (float): Binary classification threshold used to compute
+            the label_MB column.
     """
 
     def __init__(self, filepaths: list[str], threshold: float = 0.5):
+        """
+        Load, normalize, filter, and combine all CSV files.
+
+        For each file path: reads the CSV, normalizes column names and string
+        values, renames legacy column names, adds missing required columns,
+        and derives the model name from the filename. After all files are
+        loaded, applies the 85% completeness filter on the response column,
+        concatenates surviving frames into self.combined, and calls
+        _add_derived_columns().
+
+        Args:
+            filepaths (list[str]): One or more paths to evaluation CSV files.
+                Each file represents one model.
+            threshold (float): Binary classification threshold applied to
+                MalwareBench_Normalized to create the label_MB column.
+                Defaults to 0.5.
+        """
         self.threshold   = threshold
         self.frames      = []
         self.model_names = []
@@ -180,11 +215,35 @@ class DataLoader:
     # -- private --------------------------------------------------------------
     @staticmethod
     def _name_from_path(fp: str) -> str:
-        """Derive model name from filename: stem with leading EVALUATE_ stripped."""
+        """
+        Derive a clean model name from a file path.
+
+        Takes the filename stem (no extension) and strips a leading
+        "EVALUATE_" prefix (case-insensitive).
+
+        Args:
+            fp (str): File path to the evaluation CSV.
+
+        Returns:
+            str: Model name string, e.g. "MISTRAL_codestral_groq_llama-3.1".
+        """
         stem = Path(fp).stem
         return re.sub(r"^EVALUATE_", "", stem, flags=re.IGNORECASE)
 
     def _read(self, fp: str) -> pd.DataFrame | None:
+        """
+        Read a CSV file with multi-encoding fallback.
+
+        Tries UTF-8-sig, then UTF-8, then latin-1. Bad lines are silently
+        skipped in all attempts.
+
+        Args:
+            fp (str): Path to the CSV file to load.
+
+        Returns:
+            pd.DataFrame or None: Loaded DataFrame on success, or None if the
+                file does not exist or cannot be parsed with any encoding.
+        """
         if not os.path.exists(fp):
             print(f"[WARN] File not found: {fp}")
             return None
@@ -199,6 +258,27 @@ class DataLoader:
         return None
 
     def _normalize(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Normalize a raw DataFrame to the expected column schema.
+
+        Steps applied in order:
+            1. Strip whitespace and surrounding quotes from column names.
+            2. Strip surrounding quotes from all string cell values.
+            3. Rename legacy column names: prompt → forbidden_prompt,
+               Response → response, AttackMethod → attack_method,
+               Model → target_model.
+            4. Add any missing required columns (SCORE_COLS, TEXT_COLS,
+               attack_method, target_model, timestamp) as NaN.
+            5. Coerce SCORE_COLS to numeric; coerce Malicious_Count to
+               numeric if present.
+
+        Args:
+            df (pd.DataFrame): Raw DataFrame as loaded from CSV.
+
+        Returns:
+            pd.DataFrame: Normalized DataFrame with consistent column names
+                and types.
+        """
         df.columns = [c.strip().strip('"').strip("'").strip() for c in df.columns]
         # Strip surrounding quotes from string values (handles CSV written with extra quoting)
         for col in df.select_dtypes(include="object").columns:
@@ -221,6 +301,22 @@ class DataLoader:
         return df
 
     def _add_derived_columns(self):
+        """
+        Add derived analytical columns to self.combined in-place.
+
+        Columns added:
+            label_MB (float): Binary label; 1.0 if MalwareBench_Normalized
+                >= self.threshold, else 0.0.
+            prompt_char_tokens_approx (int): Approximate token count for the
+                forbidden_prompt column using len(text) / 4 (character-based
+                approximation suited for code-heavy content).
+            response_char_tokens_approx (int): Same approximation for the
+                response column.
+            total_char_tokens_approx (int): Sum of prompt and response
+                character token approximations.
+            timestamp (datetime): Parsed from the existing timestamp column;
+                unparseable values become NaT.
+        """
         df = self.combined
 
         # Binary label using MalwareBench_Normalized as primary signal
@@ -247,7 +343,24 @@ class DataLoader:
 # ==============================================================================
 
 def describe_series(s: pd.Series, label: str = "") -> dict:
-    """Full descriptive statistics dictionary for a numeric series."""
+    """
+    Compute a full set of descriptive statistics for a numeric series.
+
+    Uses scipy.stats.trim_mean (10% trim) if scipy is available; falls back
+    to np.nan otherwise.
+
+    Args:
+        s (pd.Series): Numeric series to describe. NaN values are dropped
+            before computation.
+        label (str): Human-readable label stored in the "label" key of the
+            returned dict. Defaults to "".
+
+    Returns:
+        dict: Keys — label, n, mean, trimmed_mean, median, mode, variance,
+            std, min, max, range, iqr, p5, p25, p75, p95, p99, skewness,
+            kurtosis, missing. Returns an empty dict if the series has no
+            non-NaN values.
+    """
     s = s.dropna()
     if len(s) == 0:
         return {}
@@ -282,6 +395,21 @@ def describe_series(s: pd.Series, label: str = "") -> dict:
 # ==============================================================================
 
 def layer1_descriptive(df: pd.DataFrame, out: Path) -> pd.DataFrame:
+    """
+    Layer 1: Compute descriptive statistics for MalwareBench score columns.
+
+    Reads columns: MalwareBench_Score, MalwareBench_Normalized.
+    Writes CSV: L1_descriptive_statistics.csv (one row per column with all
+        describe_series metrics).
+
+    Args:
+        df (pd.DataFrame): Combined evaluation DataFrame.
+        out (Path): Output directory for CSV files.
+
+    Returns:
+        pd.DataFrame: Descriptive statistics table indexed by column label.
+            Empty DataFrame if no numeric data is available.
+    """
     print("  -> Layer 1: Descriptive statistics")
     rows = []
     for col in ["MalwareBench_Score", "MalwareBench_Normalized"]:
@@ -299,6 +427,29 @@ def layer1_descriptive(df: pd.DataFrame, out: Path) -> pd.DataFrame:
 # ==============================================================================
 
 def layer2_binary(df: pd.DataFrame, threshold: float, out: Path) -> dict:
+    """
+    Layer 2: Compute binary malicious/safe classification rates and refusal rate.
+
+    Reads columns: MalwareBench_Normalized (primary signal), MB_Status.
+    Writes CSV: L2_binary_analysis.csv (one row per metric group).
+
+    Refusal rate is the count of rows where MB_Status == "refusal" divided by
+    total rows. Refusal rows are included in all calculations; they are never
+    filtered out.
+
+    Args:
+        df (pd.DataFrame): Combined evaluation DataFrame.
+        threshold (float): Score threshold; rows with
+            MalwareBench_Normalized >= threshold are counted as malicious.
+        out (Path): Output directory for CSV files.
+
+    Returns:
+        dict: Keys map metric names to nested dicts. Keys present:
+            "MalwareBench_Normalized" — n, malicious_count, safe_count,
+                malicious_rate, safe_rate, error_rate, threshold_used.
+            "refusal_rate" (if MB_Status present) — n, refusal_count,
+                refusal_rate.
+    """
     print("  -> Layer 2: Binary success/failure analysis")
     result = {}
 
@@ -346,6 +497,28 @@ def layer2_binary(df: pd.DataFrame, threshold: float, out: Path) -> dict:
 # ==============================================================================
 
 def layer3_agreement(df: pd.DataFrame, threshold: float, out: Path, plots: Path):
+    """
+    Layer 3: Agreement analysis between MalwareBench and VirusTotal signals.
+
+    Reads columns: MalwareBench_Normalized, Malicious_Count (integer 0-70+).
+    Malicious_Count > 0 is the VT malicious threshold.
+    Writes CSV: L3_agreement_analysis.csv — four buckets (Both Safe,
+        Both Malicious, VT Only Malicious, MB Only Malicious) with counts
+        and percentages.
+    Writes plot: L3_agreement_analysis.png — 2x2 heatmap if matplotlib is
+        available.
+
+    Skips with a note CSV if Malicious_Count is absent or all-NaN. Uses
+    agreement analysis framing, not a confusion matrix, because the two
+    systems are independent (Rule 2).
+
+    Args:
+        df (pd.DataFrame): Combined evaluation DataFrame.
+        threshold (float): MalwareBench_Normalized threshold for the MB
+            malicious boundary.
+        out (Path): Output directory for CSV files.
+        plots (Path): Output directory for plot files.
+    """
     print("  -> Layer 3: Score agreement analysis (MB vs VT)")
 
     if "Malicious_Count" not in df.columns or df["Malicious_Count"].isna().all():
@@ -422,6 +595,28 @@ def layer3_agreement(df: pd.DataFrame, threshold: float, out: Path, plots: Path)
 # ==============================================================================
 
 def layer4_continuous(df: pd.DataFrame, threshold: float, out: Path, plots: Path):
+    """
+    Layer 4: Score distribution histograms and KDE overlays.
+
+    Reads columns: MalwareBench_Normalized (always), Malicious_Count
+        (if present and non-null — integer 0-70+), MB_Status (for refusal
+        annotation).
+    Writes plots (if matplotlib is available):
+        L4_per_model_distributions.png — grid of per-model histograms with
+            optional KDE; histograms for MalwareBench_Normalized include a
+            visible "Refusals (n=X)" annotation at x=0 if any refusals exist.
+        L4_combined_distribution.png — KDE overlay comparing all models on
+            MalwareBench_Normalized, with threshold line and refusal marker.
+
+    Skips plot generation silently if matplotlib is not installed.
+
+    Args:
+        df (pd.DataFrame): Combined evaluation DataFrame.
+        threshold (float): Threshold value drawn as a vertical dashed line
+            on the combined overlay.
+        out (Path): Output directory (unused in this layer; plots only).
+        plots (Path): Output directory for plot files.
+    """
     print("  -> Layer 4: Per-model distributions + combined overlay")
 
     if not HAS_MPL:
@@ -528,6 +723,22 @@ def layer4_continuous(df: pd.DataFrame, threshold: float, out: Path, plots: Path
 # ==============================================================================
 
 def layer5_segmentation(df: pd.DataFrame, out: Path, plots: Path):
+    """
+    Layer 5: Segment evaluation scores by attack_method category.
+
+    Reads columns: attack_method, MalwareBench_Normalized.
+    Writes CSV: L5_segmentation.csv — per-method stats (n, mean, median,
+        std, failure_rate at threshold 0.5, max) for MalwareBench_Normalized.
+    Writes plot: L5_segmentation.png — two horizontal bar charts (mean score
+        and failure rate per attack method), colour-coded by risk level.
+
+    Skips silently if attack_method column is missing or all-NaN.
+
+    Args:
+        df (pd.DataFrame): Combined evaluation DataFrame.
+        out (Path): Output directory for CSV files.
+        plots (Path): Output directory for plot files.
+    """
     print("  -> Layer 5: Segmentation / slicing by attack method")
 
     if "attack_method" not in df.columns or df["attack_method"].isna().all():
@@ -589,10 +800,28 @@ def layer5_segmentation(df: pd.DataFrame, out: Path, plots: Path):
 
 def layer6_tokens_vs_score(df: pd.DataFrame, out: Path, plots: Path):
     """
-    Layer 6: Token count vs evaluation score.
-    X-axis = token counts, Y-axis = evaluation scores.
-    Grid layout: rows = models, cols = prompt / response tokens.
-    No trend lines, no total_char_tokens_approx.
+    Layer 6: Correlation and scatter analysis of token counts versus scores.
+
+    Token counts use the character-based approximation column
+    response_char_tokens_approx = len(text) / 4, suited for code-heavy
+    content (Rule 4). The total_char_tokens_approx column is excluded from
+    this layer.
+
+    Reads columns: prompt_char_tokens_approx, response_char_tokens_approx,
+        MalwareBench_Normalized, target_model.
+    Writes CSVs:
+        L6_token_vs_score.csv — Pearson and Spearman correlation stats for
+            prompt and response token counts vs MalwareBench_Normalized.
+        L6_token_bins.csv — Mean score and failure rate per quartile bin of
+            response token length.
+    Writes plot: L6_tokens_vs_score.png — scatter grid (rows = models,
+        cols = prompt tokens vs score | response tokens vs score), colour-
+        mapped by MalwareBench_Normalized. No trend lines.
+
+    Args:
+        df (pd.DataFrame): Combined evaluation DataFrame.
+        out (Path): Output directory for CSV files.
+        plots (Path): Output directory for plot files.
     """
     print("  -> Layer 6: Token count vs score")
 
@@ -698,6 +927,33 @@ def layer6_tokens_vs_score(df: pd.DataFrame, out: Path, plots: Path):
 # ==============================================================================
 
 def layer7_stability(df: pd.DataFrame, out: Path, plots: Path) -> dict:
+    """
+    Layer 7: Stability and robustness analysis of MalwareBench scores.
+
+    Reads columns: MalwareBench_Normalized, attack_method.
+    Writes CSVs:
+        L7_stability.csv — global variance, std, coefficient of variation,
+            consistency score (1 / (1 + CV)), and extreme-value counts for
+            MalwareBench_Normalized.
+        L7_stability_by_method.csv — same metrics grouped by attack_method
+            (groups with fewer than 3 rows are skipped).
+    Writes plot: L7_stability.png — rolling standard deviation over samples
+        with global std reference line for MalwareBench_Normalized.
+
+    The stability output dict is passed to layer12_drift as a baseline for
+    drift detection.
+
+    Args:
+        df (pd.DataFrame): Combined evaluation DataFrame.
+        out (Path): Output directory for CSV files.
+        plots (Path): Output directory for plot files.
+
+    Returns:
+        dict: Keys are score column names (e.g., "MalwareBench_Normalized"),
+            values are dicts with keys: score, output_variance, output_std,
+            consistency_score, cv_pct, n_near_zero, n_near_one, n_extreme.
+            Returns an empty dict if no data is available.
+    """
     print("  -> Layer 7: Stability & robustness analysis")
 
     result = {}
@@ -768,6 +1024,29 @@ def layer7_stability(df: pd.DataFrame, out: Path, plots: Path) -> dict:
 # ==============================================================================
 
 def layer8_correlation(df: pd.DataFrame, out: Path, plots: Path):
+    """
+    Layer 8: Pearson and Spearman correlation matrices across numeric columns.
+
+    Reads columns: MalwareBench_Normalized, prompt_char_tokens_approx,
+        response_char_tokens_approx, total_char_tokens_approx,
+        Malicious_Count (integer 0-70+, if present and non-null).
+    MalwareBench_Score is excluded from this layer; only MalwareBench_Normalized
+    is used (as the normalised primary signal).
+
+    Writes CSVs:
+        L8_AV_correlation_pearson.csv — Pearson correlation matrix.
+        L8_AV_correlation_spearman.csv — Spearman correlation matrix.
+    Writes plot: L8_correlation_heatmap.png — side-by-side heatmaps with
+        annotated correlation coefficients.
+
+    Skips with a warning if fewer than 5 complete rows are available.
+    Correlation between MB and VT columns is informational only (Rule 2).
+
+    Args:
+        df (pd.DataFrame): Combined evaluation DataFrame.
+        out (Path): Output directory for CSV files.
+        plots (Path): Output directory for plot files.
+    """
     print("  -> Layer 8: Correlation matrices")
 
     base_cols = [
@@ -825,9 +1104,29 @@ def layer8_correlation(df: pd.DataFrame, out: Path, plots: Path):
 
 def layer12_drift(df: pd.DataFrame, stability_data: dict, out: Path, plots: Path):
     """
-    Connected to Layer 7:
-    - Uses stability variance as baseline
-    - Detects drift relative to the expected variance window
+    Layer 12: Temporal drift detection linked to Layer 7 stability baseline.
+
+    Reads columns: timestamp, MalwareBench_Normalized.
+    Requires at least 10 rows with valid timestamps; skips silently otherwise.
+
+    Splits the chronologically-sorted series into first and last halves and
+    applies a Mann-Whitney U test (scipy, if available) to detect statistically
+    significant drift (p < 0.05). Uses the global_std from stability_data as
+    the reference variance window.
+
+    Writes CSV: L12_drift.csv — per-column drift stats including first/last
+        half means, drift_delta, drift_direction, Mann-Whitney statistic and
+        p-value, and a human-readable note.
+    Writes plot: L12_drift.png — raw scores, rolling mean, and global mean
+        reference line for MalwareBench_Normalized over sample index.
+
+    Args:
+        df (pd.DataFrame): Combined evaluation DataFrame with a timestamp
+            column.
+        stability_data (dict): Output dict from layer7_stability, used to
+            read the global_std baseline for each score column.
+        out (Path): Output directory for CSV files.
+        plots (Path): Output directory for plot files.
     """
     print("  -> Layer 12: Drift / temporal change (connected to Layer 7)")
 
@@ -915,6 +1214,25 @@ def layer12_drift(df: pd.DataFrame, stability_data: dict, out: Path, plots: Path
 # ==============================================================================
 
 def layer13_entropy(df: pd.DataFrame, out: Path, plots: Path):
+    """
+    Layer 13: Entropy and uncertainty analysis of MalwareBench score distribution.
+
+    Reads column: MalwareBench_Normalized.
+    Bins the distribution into sqrt(n) buckets (clamped to 3-10) over [0, 1]
+    and computes normalized Shannon entropy. Also measures high-confidence
+    safe (< 0.1), high-confidence malicious (> 0.9), and uncertain zone
+    [0.4, 0.6] fractions.
+
+    Writes CSV: L13_entropy.csv — per-column entropy stats with a text
+        interpretation of the entropy level.
+
+    Skips columns with fewer than 5 non-NaN values.
+
+    Args:
+        df (pd.DataFrame): Combined evaluation DataFrame.
+        out (Path): Output directory for CSV files.
+        plots (Path): Output directory (unused in this layer; no plot produced).
+    """
     print("  -> Layer 13: Entropy & uncertainty")
 
     rows = []
@@ -954,6 +1272,29 @@ def layer13_entropy(df: pd.DataFrame, out: Path, plots: Path):
 # ==============================================================================
 
 def layer14_error_taxonomy(df: pd.DataFrame, threshold: float, out: Path, plots: Path):
+    """
+    Layer 14: Categorize every row into a risk taxonomy using MalwareBench as
+    the primary signal.
+
+    Reads columns: MalwareBench_Normalized, MB_Status.
+    Category rules (applied in priority order):
+        "Refusal"           — MB_Status == "refusal" (explicit refusal state).
+        "Missing/Error"     — MalwareBench_Normalized is NaN.
+        "MB: High Risk"     — MalwareBench_Normalized >= 0.7.
+        "MB: Elevated Risk" — MalwareBench_Normalized >= 0.4.
+        "MB: Low Risk"      — MalwareBench_Normalized < 0.4.
+
+    Writes CSV: L14_error_taxonomy_MB.csv — category counts and percentages.
+    Writes plot: L14_error_taxonomy.png — horizontal bar chart and pie chart
+        of category distribution.
+
+    Args:
+        df (pd.DataFrame): Combined evaluation DataFrame.
+        threshold (float): Passed in for context; the taxonomy uses fixed
+            0.7 / 0.4 / 0.0 boundaries rather than this parameter.
+        out (Path): Output directory for CSV files.
+        plots (Path): Output directory for plot files.
+    """
     print("  -> Layer 14: Error taxonomy (MB primary signal)")
 
     # -- MB-based taxonomy ----------------------------------------------------
@@ -1004,6 +1345,25 @@ def layer14_error_taxonomy(df: pd.DataFrame, threshold: float, out: Path, plots:
 # ==============================================================================
 
 def layer15_max_risk(df: pd.DataFrame, out: Path) -> pd.DataFrame:
+    """
+    Layer 15: Maximum risk summary and top-10 worst-case rows.
+
+    Reads columns: MalwareBench_Normalized, MalwareBench_Score,
+        target_model, attack_method, forbidden_prompt, MalwareBench_Reasoning.
+    Writes CSVs:
+        L15_max_risk.csv — per-column max, p99 tail risk, counts above 0.8
+            and 0.9, and mean of worst 5 and worst 10 rows.
+        L15_top10_worst_cases.csv — the 10 rows with the highest
+            MalwareBench_Normalized, with key columns retained.
+
+    Args:
+        df (pd.DataFrame): Combined evaluation DataFrame.
+        out (Path): Output directory for CSV files.
+
+    Returns:
+        pd.DataFrame: The max risk summary table (same content as
+            L15_max_risk.csv). Empty DataFrame if no data is available.
+    """
     print("  -> Layer 15: Max risk analysis")
 
     rows = []
@@ -1040,6 +1400,42 @@ def layer15_max_risk(df: pd.DataFrame, out: Path) -> pd.DataFrame:
 
 def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
                      threshold: float, out: Path, plots: Path):
+    """
+    Cross-model statistical comparison for MalwareBench and VirusTotal metrics.
+
+    Reads columns (per frame): MalwareBench_Normalized, Malicious_Count
+        (integer 0-70+, optional).
+    Skips silently if fewer than 2 models are loaded.
+
+    Writes CSVs:
+        MC_model_comparison.csv — per-model stats for MalwareBench_Normalized
+            (n, mean, median, std, malicious_rate, max_risk, p99,
+            consistency).
+        MC_significance_tests.csv — pairwise Mann-Whitney U test results for
+            MalwareBench_Normalized between every pair of models.
+        MC_model_comparison_VT.csv — per-model stats for Malicious_Count
+            (if present in at least one model).
+        MC_significance_tests_VT.csv — pairwise Mann-Whitney U for
+            Malicious_Count (if present).
+    Writes plots:
+        MC_model_comparison.png — three panels: mean bar chart, malicious
+            rate bar chart, and box plot per model for MalwareBench_Normalized.
+        MC_score_distribution_stacked.png — 100% stacked bar: MalwareBench
+            score (0-10 integer buckets) distribution per model.
+        MC_score_distribution_stacked_VT.png — 100% stacked bar: Malicious_
+            Count bucket distribution per model (if VT data available).
+        MC_model_comparison_VT.png — mean and box plots for Malicious_Count
+            per model (if VT data available).
+
+    Args:
+        frames (list[pd.DataFrame]): Per-model DataFrames, index-aligned with
+            model_names.
+        model_names (list[str]): Model name strings.
+        threshold (float): MalwareBench_Normalized threshold for malicious
+            rate computation.
+        out (Path): Output directory for CSV files.
+        plots (Path): Output directory for plot files.
+    """
     print("  -> Model Comparison: cross-model statistics")
 
     if len(frames) < 2:
@@ -1353,6 +1749,29 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
 
 def benchmark_comparison(df: pd.DataFrame, benchmark_path: str | None,
                          out: Path, plots: Path):
+    """
+    Compare the evaluated model's MalwareBench scores against a reference
+    benchmark CSV, or produce an internal quartile reference if none is given.
+
+    Reads column: MalwareBench_Normalized.
+    Writes CSV: BENCH_comparison.csv.
+        If benchmark_path is None: generates an internal quartile benchmark
+            using the Q1 value (25th percentile) as the reference mean.
+        If benchmark_path is provided: loads it via DataLoader, then computes
+            delta_mean and runs a Mann-Whitney U test between model and
+            benchmark distributions.
+    Writes plot: BENCH_comparison.png — side-by-side box plots of model vs
+        benchmark (only if benchmark_path is provided and matplotlib is
+        available).
+
+    Args:
+        df (pd.DataFrame): Combined evaluation DataFrame for the model(s)
+            under test.
+        benchmark_path (str or None): Path to a reference evaluation CSV, or
+            None to use the internal quartile reference.
+        out (Path): Output directory for CSV files.
+        plots (Path): Output directory for plot files.
+    """
     print("  -> Benchmark Dataset Comparison")
 
     if benchmark_path is None:
@@ -1434,6 +1853,40 @@ def benchmark_comparison(df: pd.DataFrame, benchmark_path: str | None,
 def summary_dashboard(df: pd.DataFrame, l1: pd.DataFrame, l15: pd.DataFrame,
                       threshold: float, out: Path, plots: Path,
                       frames: list = None, model_names: list = None):
+    """
+    Generate a dark-theme summary dashboard image combining key metrics.
+
+    Reads columns: MalwareBench_Score, MalwareBench_Normalized, attack_method.
+    Layout: 2 rows × 4 columns for a single model; adds a third row with a
+    per-model box plot panel when multiple models are present.
+
+    Panels:
+        [0,0] MalwareBench_Score histogram.
+        [0,1] Attack method bar chart (top 8).
+        [0,2] Max-risk semicircular gauge (MalwareBench_Normalized).
+        [0,3] Key descriptive statistics from Layer 1.
+        [1,0:3] MalwareBench_Score over samples with rolling mean.
+        [1,3] MalwareBench_Normalized histogram with threshold line.
+        [2,0:4] Per-model box plot (only when >1 model).
+
+    Writes plot: DASHBOARD_summary.png (dark background, facecolor preserved).
+    Skips silently if matplotlib is not available.
+
+    Args:
+        df (pd.DataFrame): Combined evaluation DataFrame.
+        l1 (pd.DataFrame): Layer 1 descriptive statistics table (indexed by
+            column label, as returned by layer1_descriptive).
+        l15 (pd.DataFrame): Layer 15 max risk table (as returned by
+            layer15_max_risk).
+        threshold (float): Threshold drawn as a reference line on the
+            MalwareBench_Normalized histogram panel.
+        out (Path): Output directory (unused; plots directory is used).
+        plots (Path): Output directory for the dashboard image.
+        frames (list[pd.DataFrame], optional): Per-model frames for the
+            multi-model panel. Defaults to None.
+        model_names (list[str], optional): Model name labels for the
+            multi-model panel. Defaults to None.
+    """
     if not HAS_MPL:
         return
     print("  -> Generating summary dashboard")
@@ -1457,6 +1910,12 @@ def summary_dashboard(df: pd.DataFrame, l1: pd.DataFrame, l15: pd.DataFrame,
     )
 
     def style_ax(ax):
+        """
+        Apply the dark-theme style to a matplotlib Axes object.
+
+        Args:
+            ax: matplotlib Axes to style in-place.
+        """
         ax.set_facecolor("#161b22")
         ax.spines[:].set_color("#30363d")
         ax.tick_params(colors="#aaaaaa", labelsize=7)
@@ -1580,11 +2039,46 @@ def summary_dashboard(df: pd.DataFrame, l1: pd.DataFrame, l15: pd.DataFrame,
 # ==============================================================================
 
 def generate_html_report(out: Path, plots: Path, meta: dict):
+    """
+    Generate a self-contained dark-theme HTML report embedding all CSV tables
+    and PNG plots produced by the statistical layers.
+
+    Reads all .png files from plots/ and all layer CSV files from out/.
+    The "Top 10 Worst Cases" section is rendered with a collapse/expand
+    toggle button.
+
+    Writes: out/report.html — a single UTF-8 HTML file with inline CSS and
+        JavaScript.
+
+    Args:
+        out (Path): Output directory containing layer CSV files. The report
+            is written here as report.html.
+        plots (Path): Directory containing PNG plot files to embed.
+        meta (dict): Report metadata with keys:
+            timestamp (str): Generation timestamp string.
+            models (str): Comma-separated model name list.
+            n_models (int): Number of models analyzed.
+            total_rows (int): Total row count across all models.
+            threshold (float): Binary classification threshold used.
+            mean_mb_score (str): Formatted mean MalwareBench_Score.
+            max_mb_norm (str): Formatted maximum MalwareBench_Normalized.
+            mean_mb_norm (str): Formatted mean MalwareBench_Normalized.
+            malicious_rate (str): Formatted percentage of malicious rows.
+    """
     print("  -> Generating HTML report")
 
     plot_files = sorted(plots.glob("*.png"))
 
     def img_tag(path: Path) -> str:
+        """
+        Build an HTML plot card div for a single PNG file.
+
+        Args:
+            path (Path): Absolute path to the PNG file.
+
+        Returns:
+            str: HTML string containing a plot-card div with title and img tag.
+        """
         rel = os.path.relpath(path, out)
         return (f'<div class="plot-card">'
                 f'<p class="plot-title">{path.stem.replace("_", " ")}</p>'
@@ -1592,6 +2086,17 @@ def generate_html_report(out: Path, plots: Path, meta: dict):
                 f'</div>')
 
     def csv_table(csv_path: Path) -> str:
+        """
+        Render a CSV file as an HTML table string.
+
+        Args:
+            csv_path (Path): Path to the CSV file to render.
+
+        Returns:
+            str: HTML table markup wrapped in a .table-wrap div, or an
+                error/empty message paragraph if the file is missing, empty,
+                or unreadable.
+        """
         if not csv_path.exists():
             return "<p><em>File not found.</em></p>"
         try:
@@ -1760,6 +2265,50 @@ def generate_html_report(out: Path, plots: Path, meta: dict):
 # ==============================================================================
 
 def main():
+    """
+    CLI entry point for the multi-layer statistical analyzer.
+
+    Parses command-line arguments, loads evaluation CSV files via DataLoader,
+    runs all statistical layers in sequence, generates the summary dashboard,
+    and writes the HTML report.
+
+    CLI arguments:
+        --files (required, one or more): Paths to evaluation CSV files.
+            Each file represents one model.
+        --benchmark (optional): Path to a reference benchmark CSV for
+            BENCH_* comparison. If omitted, an internal quartile reference
+            is used.
+        --threshold (default 0.5): Binary classification threshold applied to
+            MalwareBench_Normalized.
+        --output (default "stats_output"): Output directory name. Created if
+            it does not exist. A plots/ subdirectory is created inside it.
+
+    Output structure:
+        <output>/
+            L1_descriptive_statistics.csv
+            L2_binary_analysis.csv
+            L3_agreement_analysis.csv
+            L5_segmentation.csv
+            L6_token_vs_score.csv
+            L6_token_bins.csv
+            L7_stability.csv
+            L7_stability_by_method.csv
+            L8_AV_correlation_pearson.csv
+            L8_AV_correlation_spearman.csv
+            L12_drift.csv
+            L13_entropy.csv
+            L14_error_taxonomy_MB.csv
+            L15_max_risk.csv
+            L15_top10_worst_cases.csv
+            MC_model_comparison.csv
+            MC_significance_tests.csv
+            MC_model_comparison_VT.csv
+            MC_significance_tests_VT.csv
+            BENCH_comparison.csv
+            report.html
+            plots/
+                (all .png figures from each layer)
+    """
     parser = argparse.ArgumentParser(
         description="Multi-layer statistics for Malicious AI evaluation results",
         formatter_class=argparse.RawDescriptionHelpFormatter,
