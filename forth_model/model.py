@@ -38,6 +38,19 @@ SYSTEM_INSTRUCTION = (
 # ---------------------- #
 
 def perplexity_provider(prompt: str, model: str):
+    """
+    Send a prompt to a Perplexity AI model and return the raw text response.
+
+    Uses the PPLX_API_KEY environment variable. Sends SYSTEM_INSTRUCTION as
+    the system message and the prompt as the user message.
+
+    Args:
+        prompt (str): The adversarial attack prompt to send to the model.
+        model (str): Perplexity model identifier, e.g. "sonar".
+
+    Returns:
+        str: Raw text content of the first completion choice.
+    """
     client = OpenAI(api_key=PPLX_API_KEY, base_url="https://api.perplexity.ai")
     response = client.chat.completions.create(
         model=model,
@@ -50,6 +63,20 @@ def perplexity_provider(prompt: str, model: str):
     return response.choices[0].message.content
 
 def groq_provider(prompt: str, model: str):
+    """
+    Send a prompt to a Groq-hosted model and return the raw text response.
+
+    Uses the GROQ_API_KEY environment variable via the Groq SDK client.
+    Sends SYSTEM_INSTRUCTION as the system message and the prompt as the
+    user message.
+
+    Args:
+        prompt (str): The adversarial attack prompt to send to the model.
+        model (str): Groq model identifier, e.g. "llama3-70b-8192".
+
+    Returns:
+        str: Raw text content of the first completion choice.
+    """
     client = Groq(api_key=GROQ_API_KEY)
     response = client.chat.completions.create(
         model=model,
@@ -61,6 +88,22 @@ def groq_provider(prompt: str, model: str):
     return response.choices[0].message.content
 
 def huggingface_provider(prompt: str, model: str):
+    """
+    Send a prompt to a HuggingFace Inference API model and return the raw
+    text response.
+
+    Uses the HF_TOKEN environment variable via the InferenceClient. Sends
+    SYSTEM_INSTRUCTION as the system message and the prompt as the user
+    message. Maximum response length is 4096 tokens.
+
+    Args:
+        prompt (str): The adversarial attack prompt to send to the model.
+        model (str): HuggingFace model repository path, e.g.
+            "meta-llama/Meta-Llama-3.1-70B-Instruct".
+
+    Returns:
+        str: Raw text content of the first completion choice.
+    """
     client = InferenceClient(token=HF_TOKEN)
     response = client.chat_completion(
         model=model,
@@ -73,6 +116,23 @@ def huggingface_provider(prompt: str, model: str):
     return response.choices[0].message.content
 
 def openrouter_provider(prompt: str, model: str):
+    """
+    Send a prompt to an OpenRouter-hosted model and return the raw text
+    response.
+
+    Uses the OPENROUTER_API_KEY environment variable. The messages list is
+    currently a placeholder ([...]) and must be replaced with a proper
+    message array before this provider can be used.
+
+    Args:
+        prompt (str): The adversarial attack prompt (currently unused due to
+            placeholder messages).
+        model (str): OpenRouter model identifier, e.g.
+            "meta-llama/llama-3.3-70b-instruct:free".
+
+    Returns:
+        str: Raw text content of the first completion choice.
+    """
     client = OpenAI(api_key=os.getenv("OPENROUTER_API_KEY"), base_url="https://openrouter.ai/api/v1")
     response = client.chat.completions.create(
         model=model,
@@ -82,6 +142,20 @@ def openrouter_provider(prompt: str, model: str):
     return response.choices[0].message.content
 
 def chatgpt_provider(prompt: str, model: str):
+    """
+    Send a prompt to an OpenAI ChatGPT model and return the raw text response.
+
+    Uses the OPENAI_API_KEY environment variable. Sends SYSTEM_INSTRUCTION as
+    the system message and the prompt as the user message. Maximum response
+    length is 4096 tokens.
+
+    Args:
+        prompt (str): The adversarial attack prompt to send to the model.
+        model (str): OpenAI model identifier, e.g. "gpt-4o-mini".
+
+    Returns:
+        str: Raw text content of the first completion choice.
+    """
     client = OpenAI(api_key=OPENAI_API_KEY)
     response = client.chat.completions.create(
         model=model,
@@ -94,6 +168,20 @@ def chatgpt_provider(prompt: str, model: str):
     return response.choices[0].message.content
 
 def mistral_provider(prompt: str, model: str):
+    """
+    Send a prompt to a Mistral AI model and return the raw text response.
+
+    Uses the MISTRAL_API_KEY environment variable with the OpenAI-compatible
+    Mistral API endpoint. Sends SYSTEM_INSTRUCTION as the system message and
+    the prompt as the user message. Maximum response length is 4096 tokens.
+
+    Args:
+        prompt (str): The adversarial attack prompt to send to the model.
+        model (str): Mistral model identifier, e.g. "codestral-latest".
+
+    Returns:
+        str: Raw text content of the first completion choice.
+    """
     client = OpenAI(api_key=MISTRAL_API_KEY, base_url="https://api.mistral.ai/v1")
     response = client.chat.completions.create(
         model=model,
