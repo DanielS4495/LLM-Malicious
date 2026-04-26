@@ -572,7 +572,7 @@ def layer3_agreement(df: pd.DataFrame, threshold: float, out: Path, plots: Path)
     plt.colorbar(im, ax=ax, label="Percentage (%)")
 
     ax.set_xticks([0, 1])
-    ax.set_xticklabels([f"SR: Safe (<{threshold})", f"SR: Malicious (\u2265{threshold})"], fontsize=10)
+    ax.set_xticklabels([f"VT: Safe (<{threshold})", f"VT: Malicious (\u2265{threshold})"], fontsize=10)
     ax.set_yticks([0, 1])
     ax.set_yticklabels([f"MB: Safe (<{threshold})", f"MB: Malicious (\u2265{threshold})"], fontsize=10)
 
@@ -582,8 +582,8 @@ def layer3_agreement(df: pd.DataFrame, threshold: float, out: Path, plots: Path)
                     f"{cell_labels[i][j]}\n{matrix_pct[i, j]:.1f}%",
                     ha="center", va="center", fontsize=11, fontweight="bold", color="black")
 
-    ax.set_title("Layer 3 \u2014 SR vs MB Agreement Analysis", fontsize=13, fontweight="bold")
-    fig.text(0.5, 0.93, f"n={n}  MB threshold={threshold}  VT threshold=Malicious_Count>0", ha="center", fontsize=9, color="gray")
+    ax.set_title("Layer 3 \u2014 VT vs MB Agreement Analysis", fontsize=13, fontweight="bold")
+    #fig.text(0.5, 0.93, f"n={n}  MB threshold={threshold}  VT threshold=Malicious_Count>0", ha="center", fontsize=9, color="gray")
 
     plt.tight_layout()
     plt.savefig(plots / "L3_agreement_analysis.png", dpi=150, bbox_inches="tight")
@@ -718,6 +718,84 @@ def layer4_continuous(df: pd.DataFrame, threshold: float, out: Path, plots: Path
     plt.close()
 
 
+def layer4_percentage_histogram(df: pd.DataFrame, out: Path, plots: Path):
+    models = df["target_model"].dropna().unique().tolist()
+    score_values = list(range(11))  # 0-10
+
+    BRIGHT_COLORS = [
+        "#FF0000",  # 0  - red
+        "#FF5500",  # 1  - orange-red
+        "#FF9900",  # 2  - orange
+        "#FFCC00",  # 3  - yellow
+        "#AAFF00",  # 4  - yellow-green
+        "#00FF00",  # 5  - green
+        "#00FFAA",  # 6  - teal-green
+        "#00CCFF",  # 7  - light blue
+        "#0066FF",  # 8  - blue
+        "#7700FF",  # 9  - purple
+        "#FF00FF",  # 10 - magenta
+    ]
+
+    def smart_round(row):
+        score = row["MalwareBench_Score"]
+        if pd.isna(score):
+            return np.nan
+        malicious = row.get("Malicious_Count", np.nan)
+        decimal_part = score - int(score)
+        if pd.notna(malicious) and malicious > 0 and decimal_part >= 0.5:
+            return int(np.ceil(score))
+        return int(np.floor(score))
+
+    fig, ax = plt.subplots(figsize=(max(8, len(models) * 2.5), 7))
+    fig.suptitle("Score Distribution per Model (%)", fontsize=13, fontweight="bold")
+
+    x = np.arange(len(models))
+    bottom = np.zeros(len(models))
+
+    legend_handles = []
+    for sc in score_values:
+        color = BRIGHT_COLORS[sc]
+        legend_handles.append(mpatches.Patch(color=color, label=str(sc)))
+        heights = []
+        for model in models:
+            model_df = df[df["target_model"] == model].copy()
+
+            # build score column with smart rounding
+            cols = ["MalwareBench_Score"]
+            if "Malicious_Count" in model_df.columns:
+                cols.append("Malicious_Count")
+            else:
+                model_df["Malicious_Count"] = np.nan
+
+            s_int = model_df[["MalwareBench_Score", "Malicious_Count"]].apply(
+                smart_round, axis=1
+            ).dropna().clip(0, 10).astype(int)
+
+            pct = (s_int == sc).sum() / len(s_int) * 100 if len(s_int) > 0 else 0
+            heights.append(pct)
+
+        for mi in range(len(models)):
+            if heights[mi] > 0:
+                ax.bar(x[mi], heights[mi], bottom=bottom[mi], color=color,
+                       edgecolor="white", linewidth=0.3)
+                if heights[mi] > 5:
+                    ax.text(x[mi], bottom[mi] + heights[mi] / 2,
+                            f"{heights[mi]:.1f}%",
+                            ha="center", va="center",
+                            fontsize=8, fontweight="bold", color="black")
+                bottom[mi] += heights[mi]
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(models, rotation=30, ha="right", fontsize=9)
+    ax.set_ylabel("Percentage (%)")
+    ax.set_ylim(0, 100)
+    ax.set_xlabel("Model")
+    ax.legend(handles=legend_handles, title="Score (0-10)",
+              bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=8)
+
+    plt.tight_layout()
+    plt.savefig(plots / "L4_score_percentage_histogram.png", dpi=150, bbox_inches="tight")
+    plt.close()
 # ==============================================================================
 #  LAYER 5 -- SEGMENTATION / SLICING
 # ==============================================================================
@@ -2355,6 +2433,7 @@ def main():
     layer2_binary(df, args.threshold, out_dir)
     layer3_agreement(df, args.threshold, out_dir, plots_dir)
     layer4_continuous(df, args.threshold, out_dir, plots_dir)
+    layer4_percentage_histogram(df, out_dir, plots_dir)
     layer5_segmentation(df, out_dir, plots_dir)
     layer6_tokens_vs_score(df, out_dir, plots_dir)
     stab = layer7_stability(df, out_dir, plots_dir)

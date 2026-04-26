@@ -36,8 +36,8 @@ load_dotenv()
 #          "gemini", "perplexity", "huggingface", "gpt", "openrouter", "ollama", "MISTRAL"
 CURRENT_PROVIDER = "groq_llama-3.1"
 
-INPUT_FILE = "EVALUATE_MISTRAL_codestral_groq_llama-3.1_final.csv"
-TARGET_MODEL_NAME = "MISTRAL_codestral"
+INPUT_FILE = "responses_results_mistral-small-latest_1.csv"
+TARGET_MODEL_NAME = "MISTRAL_small-latest"
 SAFE_NAME = TARGET_MODEL_NAME.replace('/', '-')
 FINAL_OUTPUT_FILE = f"EVALUATE_{SAFE_NAME}_{CURRENT_PROVIDER}_final.csv"
 
