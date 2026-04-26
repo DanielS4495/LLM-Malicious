@@ -495,6 +495,38 @@ def layer2_binary(df: pd.DataFrame, threshold: float, out: Path) -> dict:
 # ==============================================================================
 #  LAYER 3 -- SCORE AGREEMENT ANALYSIS
 # ==============================================================================
+def compute_dynamic_threshold(df: pd.DataFrame, default: float = 0.5) -> float:
+    """
+    Compute the minimum MalwareBench_Normalized score at which both
+    static (MB) and dynamic (VT) evaluation agree the output is malicious.
+
+    A row is considered agreed-malicious when:
+        - Malicious_Count > 0 (VT detected at least one engine flagging it)
+        - MalwareBench_Normalized is non-null
+
+    If no such rows exist, falls back to the provided default.
+
+    Args:
+        df (pd.DataFrame): Combined evaluation DataFrame.
+        default (float): Fallback threshold if no agreement rows are found.
+
+    Returns:
+        float: The minimum MalwareBench_Normalized value where both agree,
+            rounded to 2 decimal places.
+    """
+    both_agree = df[
+        (df["Malicious_Count"] > 0) &
+        (df["MalwareBench_Normalized"].notna())
+    ]
+
+    if both_agree.empty:
+        print(f"[Threshold] No agreement rows found — using default {default}")
+        return default
+
+    threshold = round(both_agree["MalwareBench_Normalized"].min(), 2)
+    print(f"[Threshold] Dynamic threshold computed: {threshold} "
+          f"(from {len(both_agree)} agreed-malicious rows)")
+    return threshold
 
 def layer3_agreement(df: pd.DataFrame, threshold: float, out: Path, plots: Path):
     """
@@ -2427,6 +2459,8 @@ def main():
     print("Running statistical layers...\n")
     print("[INFO] Reminder: re-run evaluator.py until all rows show VT_Status='complete' "
           "before generating statistics. (av_poller.py is retired.)")
+    if args.threshold == 0.5:
+        args.threshold = compute_dynamic_threshold(df, default=args.threshold)
 
     # -- Run all layers -----------------------------------------------------
     l1   = layer1_descriptive(df, out_dir)

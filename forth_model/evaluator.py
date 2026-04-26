@@ -906,29 +906,42 @@ def run_vt_for_row(result_row: dict, row_idx=None) -> tuple:
                 result_row["Web_Link"]  = web_link
                 return result_row, False
 
+
             elif status_code == 404:
-                # UPLOAD PATH: File unknown to VT.
+
                 analysis_id, quota_hit = upload_file(code)
-                time.sleep(16)
+
+                # הסרנו את sleep(16) — אין קריאת VT אחרי זה
 
                 if quota_hit:
                     print(f"[{label}] VT — quota exhausted (429), saving and stopping")
+
                     result_row.update(_VT_NA_COLS)
-                    result_row["Web_Link"]  = web_link
+
+                    result_row["Web_Link"] = web_link
+
                     result_row["VT_Status"] = "error"
+
                     return result_row, True
 
                 if analysis_id:
+
                     print(f"[{label}] VT — new file uploaded, VT_Status=pending")
+
                     result_row["VT_Status"] = "pending"
-                    result_row["Web_Link"]  = web_link
+
+                    result_row["Web_Link"] = web_link
+
                     for k in _VT_RESULT_COLS:
                         result_row[k] = pd.NA
+
                     return result_row, False
+
                 else:
-                    # Non-quota upload failure — retry
+
                     if attempt < 3:
                         time.sleep(2 * attempt)
+
                     continue
 
             elif status_code == 429:
