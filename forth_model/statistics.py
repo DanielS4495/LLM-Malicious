@@ -1169,47 +1169,55 @@ def layer8_correlation(df: pd.DataFrame, out: Path, plots: Path):
         "MalwareBench_Normalized",
         "prompt_char_tokens_approx",
         "response_char_tokens_approx",
-        "total_char_tokens_approx",
+        "Malicious_Count",
     ]
-    if "Malicious_Count" in df.columns and df["Malicious_Count"].notna().any():
-        base_cols.append("Malicious_Count")
 
-    avail_cols = [c for c in base_cols if c in df.columns]
-    sub = df[avail_cols].dropna()
-
-    if len(sub) < 5:
-        print("     [WARN] Fewer than 5 complete rows — Layer 8 skipped")
-        return
-
-    pearson_matrix  = sub.corr(method="pearson")
-    spearman_matrix = sub.corr(method="spearman")
-
-    pearson_matrix.to_csv(out  / "L8_AV_correlation_pearson.csv")
-    spearman_matrix.to_csv(out / "L8_AV_correlation_spearman.csv")
+    models = df["target_model"].dropna().unique().tolist()
 
     if not HAS_MPL:
         return
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-    fig.suptitle("Layer 8 \u2014 Correlation Matrices", fontsize=13, fontweight="bold")
+    fig, axes = plt.subplots(1, len(models), figsize=(8 * len(models), 7))
+    if len(models) == 1:
+        axes = [axes]
 
-    for ax, matrix, label in zip(axes,
-                                  [pearson_matrix, spearman_matrix],
-                                  ["Pearson", "Spearman"]):
+    fig.suptitle("Spearman Correlation per Model", fontsize=13, fontweight="bold")
+
+    for ax, model in zip(axes, models):
+        model_df = df[df["target_model"] == model]
+        avail_cols = [c for c in base_cols if c in model_df.columns]
+        sub = model_df[avail_cols].dropna()
+
+        if len(sub) < 5:
+            ax.set_visible(False)
+            continue
+
+        matrix = sub.corr(method="spearman")
+
+        # save CSV per model
+        safe_name = model.replace(" ", "_")
+        matrix.to_csv(out / f"L8_spearman_{safe_name}.csv")
+
         vals = matrix.values
         im = ax.imshow(vals, cmap="coolwarm", vmin=-1, vmax=1, aspect="auto")
         plt.colorbar(im, ax=ax)
         ax.set_xticks(range(len(matrix.columns)))
-        ax.set_xticklabels(matrix.columns, rotation=45, ha="right", fontsize=8)
+        ax.set_xticklabels(matrix.columns, rotation=15, ha="right", fontsize=9)
         ax.set_yticks(range(len(matrix.index)))
-        ax.set_yticklabels(matrix.index, fontsize=8)
-        ax.set_title(f"{label} Correlation", fontsize=10, fontweight="bold")
+        ax.set_yticklabels(matrix.index, fontsize=9)
+        ax.set_title(model, fontsize=11, fontweight="bold")
+
         for i in range(len(matrix.index)):
             for j in range(len(matrix.columns)):
                 ax.text(j, i, f"{vals[i, j]:.2f}",
-                        ha="center", va="center", fontsize=8, color="black")
+                        ha="center", va="center", fontsize=9, color="black")
 
     plt.tight_layout()
+    fig.text(0.5, -0.08,
+             "Spearman correlation between maliciousness score, prompt length, response length, and VT detection count.\n"
+             "Values close to 1.0 indicate strong positive correlation. Each matrix represents one evaluated model.",
+             ha="center", fontsize=12, color="black")
+
     plt.savefig(plots / "L8_correlation_heatmap.png", dpi=150, bbox_inches="tight")
     plt.close()
 
