@@ -164,12 +164,18 @@ class DataLoader:
         for fp in filepaths:
             df = self._read(fp)
             if df is None:
-                # File unreadable — still must produce a model slot to keep
-                # the count correct; skip silently with a warning already printed.
                 continue
             df = self._normalize(df)
-            model_name = self._name_from_path(fp)
-            df["target_model"] = model_name
+
+            # Get model name from CSV if available, fallback to filename
+            filename_model_name = self._name_from_path(fp)
+            if "target_model" in df.columns and df["target_model"].notna().any():
+                model_name = str(df["target_model"].dropna().iloc[0]).strip()
+                df["target_model"] = df["target_model"].fillna(model_name)
+            else:
+                model_name = filename_model_name
+                df["target_model"] = model_name
+
             self.frames.append(df)
             self.model_names.append(model_name)
 
@@ -755,17 +761,17 @@ def layer4_percentage_histogram(df: pd.DataFrame, out: Path, plots: Path):
     score_values = list(range(11))  # 0-10
 
     BRIGHT_COLORS = [
-        "#FF0000",  # 0  - red
-        "#FF5500",  # 1  - orange-red
-        "#FF9900",  # 2  - orange
-        "#FFCC00",  # 3  - yellow
-        "#AAFF00",  # 4  - yellow-green
-        "#00FF00",  # 5  - green
-        "#00FFAA",  # 6  - teal-green
-        "#00CCFF",  # 7  - light blue
-        "#0066FF",  # 8  - blue
-        "#7700FF",  # 9  - purple
-        "#FF00FF",  # 10 - magenta
+        "#1f77b4",  # 0  - blue
+        "#ff7f0e",  # 1  - orange
+        "#2ca02c",  # 2  - green
+        "#d62728",  # 3  - red
+        "#9467bd",  # 4  - purple
+        "#8c564b",  # 5  - brown
+        "#e377c2",  # 6  - pink
+        "#17becf",  # 7  - cyan
+        "#bcbd22",  # 8  - olive
+        "#393b79",  # 9  - dark blue
+        "#637939",  # 10 - dark green
     ]
 
     def smart_round(row):
