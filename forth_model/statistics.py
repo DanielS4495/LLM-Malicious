@@ -624,6 +624,11 @@ def layer3_agreement(df: pd.DataFrame, threshold: float, out: Path, plots: Path)
     #fig.text(0.5, 0.93, f"n={n}  MB threshold={threshold}  VT threshold=Malicious_Count>0", ha="center", fontsize=9, color="gray")
 
     plt.tight_layout()
+    fig.text(0.5, -0.06,
+             f"Threshold = {threshold:.2f} — dynamically computed as the minimum MalwareBench_Normalized score\n"
+             f"at which both static (MB) and dynamic (VT) evaluation agree the output is malicious\n"
+             f"(i.e., the lowest MB score among rows where Malicious_Count > 0).",
+             ha="center", fontsize=9, color="black")
     plt.savefig(plots / "L3_agreement_analysis.png", dpi=150, bbox_inches="tight")
     plt.close()
 
@@ -915,35 +920,10 @@ def layer5_segmentation(df: pd.DataFrame, out: Path, plots: Path):
 # ==============================================================================
 
 def layer6_tokens_vs_score(df: pd.DataFrame, out: Path, plots: Path):
-    """
-    Layer 6: Correlation and scatter analysis of token counts versus scores.
-
-    Token counts use the character-based approximation column
-    response_char_tokens_approx = len(text) / 4, suited for code-heavy
-    content (Rule 4). The total_char_tokens_approx column is excluded from
-    this layer.
-
-    Reads columns: prompt_char_tokens_approx, response_char_tokens_approx,
-        MalwareBench_Normalized, target_model.
-    Writes CSVs:
-        L6_token_vs_score.csv — Pearson and Spearman correlation stats for
-            prompt and response token counts vs MalwareBench_Normalized.
-        L6_token_bins.csv — Mean score and failure rate per quartile bin of
-            response token length.
-    Writes plot: L6_tokens_vs_score.png — scatter grid (rows = models,
-        cols = prompt tokens vs score | response tokens vs score), colour-
-        mapped by MalwareBench_Normalized. No trend lines.
-
-    Args:
-        df (pd.DataFrame): Combined evaluation DataFrame.
-        out (Path): Output directory for CSV files.
-        plots (Path): Output directory for plot files.
-    """
     print("  -> Layer 6: Token count vs score")
 
-    # Correlation stats — prompt and response only (no total)
     rows = []
-    for tok_col in ["prompt_char_tokens_approx", "response_char_tokens_approx"]:
+    for tok_col in ["response_char_tokens_approx"]:
         for score_col in ["MalwareBench_Normalized"]:
             sub = df[[tok_col, score_col]].dropna()
             if len(sub) < 5:
@@ -967,7 +947,7 @@ def layer6_tokens_vs_score(df: pd.DataFrame, out: Path, plots: Path):
     corr_df = pd.DataFrame(rows)
     corr_df.to_csv(out / "L6_token_vs_score.csv", index=False)
 
-    # Binned analysis (unchanged)
+    # Binned analysis
     bin_rows = []
     all_labels = ["Q1_short", "Q2_medium", "Q3_long", "Q4_very_long"]
     try:
@@ -997,46 +977,47 @@ def layer6_tokens_vs_score(df: pd.DataFrame, out: Path, plots: Path):
     if not HAS_MPL or corr_df.empty:
         return
 
-    # Grid: rows = one per distinct model, cols = prompt vs score | response vs score
-    tok_pairs = [
-        ("prompt_char_tokens_approx",   "Prompt Tokens (approx)"),
-        ("response_char_tokens_approx", "Response Tokens (approx)"),
-    ]
-
     models = (df["target_model"].dropna().unique().tolist()
               if "target_model" in df.columns and df["target_model"].notna().any()
               else [None])
     n_models = len(models)
-    n_cols   = 2
     fig_height = max(4, n_models * 4)
 
-    fig, axes = plt.subplots(n_models, n_cols,
-                             figsize=(10, fig_height), squeeze=False)
-    fig.suptitle("Layer 6 -- Token Count vs MalwareBench 2.0 Score (per Model)",
+    fig, axes = plt.subplots(n_models, 1,
+                             figsize=(8, fig_height), squeeze=False)
+    fig.suptitle("Response Length vs MalwareBench 2.0 Score (per Model)",
                  fontsize=13, fontweight="bold")
 
     for row_i, model in enumerate(models):
         sub_df = df if model is None else df[df["target_model"] == model]
         model_label = str(model) if model is not None else "All"
 
-        for col_j, (tok_col, tok_label) in enumerate(tok_pairs):
-            ax = axes[row_i, col_j]
-            sub = sub_df[[tok_col, "MalwareBench_Normalized"]].dropna()
-            if sub.empty:
-                ax.set_visible(False)
-                continue
-            ax.scatter(sub[tok_col], sub["MalwareBench_Normalized"],
-                       alpha=0.5, s=20,
-                       c=sub["MalwareBench_Normalized"], cmap="coolwarm")
-            ax.set_xlabel(tok_label, fontsize=8)
-            ax.set_ylabel("MB 2.0 Normalized", fontsize=8)
-            ax.set_title(f"{model_label}\n{tok_label} vs Score",
-                         fontsize=8, fontweight="bold")
+        ax = axes[row_i, 0]
+        sub = sub_df[["response_char_tokens_approx", "MalwareBench_Normalized"]].dropna()
+        if sub.empty:
+            ax.set_visible(False)
+            continue
+        ax.scatter(sub["response_char_tokens_approx"], sub["MalwareBench_Normalized"],
+                   alpha=0.8,
+                   s=35,
+                   c=sub["MalwareBench_Normalized"],
+                   cmap="RdYlBu_r",
+                   vmin=0, vmax=1,
+                   edgecolors="none")
+        ax.set_xlabel("Response Tokens (approx)", fontsize=8)
+        ax.set_ylabel("MB 2.0 Normalized", fontsize=8)
+        ax.set_title(f"{model_label}", fontsize=9, fontweight="bold")
+
+    fig.text(0.5, -0.06,
+             f"Each point represents one model response. X-axis shows approximate response length.\n"
+             f"Color indicates maliciousness score: red = high risk, blue = low risk or refusal.\n"
+             f"Codestral shows a weak positive correlation (Spearman r = 0.27), while Small-latest\n"
+             f"shows negligible correlation (r = -0.05) between response length and maliciousness score.",
+             ha="center", fontsize=9, color="black")
 
     plt.tight_layout()
     plt.savefig(plots / "L6_tokens_vs_score.png", dpi=150, bbox_inches="tight")
     plt.close()
-
 
 # ==============================================================================
 #  LAYER 7 -- STABILITY / ROBUSTNESS
@@ -1524,42 +1505,6 @@ def layer15_max_risk(df: pd.DataFrame, out: Path) -> pd.DataFrame:
 
 def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
                      threshold: float, out: Path, plots: Path):
-    """
-    Cross-model statistical comparison for MalwareBench and VirusTotal metrics.
-
-    Reads columns (per frame): MalwareBench_Normalized, Malicious_Count
-        (integer 0-70+, optional).
-    Skips silently if fewer than 2 models are loaded.
-
-    Writes CSVs:
-        MC_model_comparison.csv — per-model stats for MalwareBench_Normalized
-            (n, mean, median, std, malicious_rate, max_risk, p99,
-            consistency).
-        MC_significance_tests.csv — pairwise Mann-Whitney U test results for
-            MalwareBench_Normalized between every pair of models.
-        MC_model_comparison_VT.csv — per-model stats for Malicious_Count
-            (if present in at least one model).
-        MC_significance_tests_VT.csv — pairwise Mann-Whitney U for
-            Malicious_Count (if present).
-    Writes plots:
-        MC_model_comparison.png — three panels: mean bar chart, malicious
-            rate bar chart, and box plot per model for MalwareBench_Normalized.
-        MC_score_distribution_stacked.png — 100% stacked bar: MalwareBench
-            score (0-10 integer buckets) distribution per model.
-        MC_score_distribution_stacked_VT.png — 100% stacked bar: Malicious_
-            Count bucket distribution per model (if VT data available).
-        MC_model_comparison_VT.png — mean and box plots for Malicious_Count
-            per model (if VT data available).
-
-    Args:
-        frames (list[pd.DataFrame]): Per-model DataFrames, index-aligned with
-            model_names.
-        model_names (list[str]): Model name strings.
-        threshold (float): MalwareBench_Normalized threshold for malicious
-            rate computation.
-        out (Path): Output directory for CSV files.
-        plots (Path): Output directory for plot files.
-    """
     print("  -> Model Comparison: cross-model statistics")
 
     if len(frames) < 2:
@@ -1588,7 +1533,6 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
     comp_df = pd.DataFrame(rows)
     comp_df.to_csv(out / "MC_model_comparison.csv", index=False)
 
-    # Statistical significance test between models (MalwareBench_Normalized)
     if HAS_SCIPY and len(frames) >= 2:
         sig_rows = []
         mb_series = [(name, df["MalwareBench_Normalized"].dropna()) for df, name in zip(frames, model_names)]
@@ -1613,7 +1557,6 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
                 })
         pd.DataFrame(sig_rows).to_csv(out / "MC_significance_tests.csv", index=False)
 
-    # --- VirusTotal model comparison (CSV + significance) ---
     _vc_frames_avail = [
         (df_m, name) for df_m, name in zip(frames, model_names)
         if "Malicious_Count" in df_m.columns and df_m["Malicious_Count"].notna().any()
@@ -1700,7 +1643,6 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
     plt.savefig(plots / "MC_model_comparison.png", dpi=150, bbox_inches="tight")
     plt.close()
 
-    # -- 100% Stacked Bar: MalwareBench Score distribution per model -----------
     if HAS_MPL:
         combined_df = pd.concat(frames, ignore_index=True)
         if "MalwareBench_Score" in combined_df.columns and "target_model" in combined_df.columns:
@@ -1708,7 +1650,7 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
             chart_df["mb_int"] = chart_df["MalwareBench_Score"].round().astype(int).clip(0, 10)
 
             models_ordered = sorted(chart_df["target_model"].unique())
-            score_values   = list(range(11))  # 0-10
+            score_values   = list(range(11))
 
             pct_matrix = {}
             for model in models_ordered:
@@ -1740,8 +1682,7 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
                                edgecolor="white", linewidth=0.3)
                         if h > 8:
                             ax.text(
-                                x[mi],
-                                bottom[mi] + h / 2,
+                                x[mi], bottom[mi] + h / 2,
                                 f"{h:.1f}%",
                                 ha="center", va="center",
                                 fontsize=8, fontweight="bold", color="black"
@@ -1749,7 +1690,7 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
                         bottom[mi] += h
 
             ax.set_xticks(x)
-            ax.set_xticklabels(models_ordered, rotation=30, ha="right", fontsize=9)
+            ax.set_xticklabels(models_ordered, rotation=10, ha="right", fontsize=9)
             ax.set_ylabel("Percentage (%)")
             ax.set_ylim(0, 100)
             ax.set_xlabel("Target Model")
@@ -1763,7 +1704,6 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
             plt.savefig(plots / "MC_score_distribution_stacked.png", dpi=150, bbox_inches="tight")
             plt.close()
 
-            # --- Task 5: VT stacked bar (Malicious_Count buckets, same model order) ---
             if "Malicious_Count" in combined_df.columns and combined_df["Malicious_Count"].notna().any():
                 vc_chart = combined_df[["target_model", "Malicious_Count"]].dropna().copy()
 
@@ -1775,11 +1715,16 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
                     return "31+"
 
                 bucket_order  = ["0 (clean)", "1-5", "6-15", "16-30", "31+"]
-                bucket_colors = ["#2ecc71", "#f1c40f", "#e67e22", "#e74c3c", "#7b0000"]
+                bucket_colors = [
+                    "#00C853",  # 0 (clean) - vivid green
+                    "#FFD600",  # 1-5       - vivid yellow
+                    "#FF6D00",  # 6-15      - vivid orange
+                    "#DD2222",  # 16-30     - vivid red
+                    "#880000",  # 31+       - dark red
+                ]
 
                 vc_chart["vc_bucket"] = vc_chart["Malicious_Count"].apply(_vc_bucket)
 
-                # Use same model order as MB stacked bar
                 vc_models = [m for m in models_ordered if m in vc_chart["target_model"].values]
                 if vc_models:
                     pct_vc: dict[str, dict[str, float]] = {}
@@ -1806,18 +1751,19 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
                             if h_vt > 0:
                                 ax_vt.bar(x_vt[mi_vt], h_vt, bottom=btm_vt[mi_vt],
                                           color=bkt_color, edgecolor="white", linewidth=0.3)
-                                if h_vt > 8:
+                                if h_vt > 3:  # הורדנו מ-8 ל-3
                                     ax_vt.text(
                                         x_vt[mi_vt],
                                         btm_vt[mi_vt] + h_vt / 2,
                                         f"{h_vt:.1f}%",
                                         ha="center", va="center",
-                                        fontsize=8, fontweight="bold", color="black"
+                                        fontsize=8,
+                                        fontweight="bold", color="black"
                                     )
                                 btm_vt[mi_vt] += h_vt
 
                     ax_vt.set_xticks(x_vt)
-                    ax_vt.set_xticklabels(vc_models, rotation=30, ha="right", fontsize=9)
+                    ax_vt.set_xticklabels(vc_models, rotation=0, ha="center", fontsize=9)
                     ax_vt.set_ylabel("Percentage (%)")
                     ax_vt.set_ylim(0, 100)
                     ax_vt.set_xlabel("Target Model")
@@ -1831,7 +1777,6 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
                     plt.savefig(plots / "MC_score_distribution_stacked_VT.png", dpi=150, bbox_inches="tight")
                     plt.close()
 
-    # --- Task 4: VT bar + box visualization ---
     if _vc_frames_avail and vt_stat_rows:
         vt_plot_df = pd.DataFrame(vt_stat_rows)
         vc_colors_plot = [PALETTE[i % len(PALETTE)] for i in range(len(vt_plot_df))]
@@ -1865,7 +1810,6 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
         plt.tight_layout()
         plt.savefig(plots / "MC_model_comparison_VT.png", dpi=150, bbox_inches="tight")
         plt.close()
-
 
 # ==============================================================================
 #  BENCHMARK DATASET COMPARISON
