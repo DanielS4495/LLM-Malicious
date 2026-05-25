@@ -36,17 +36,45 @@ load_dotenv()
 #          "gemini", "perplexity", "huggingface", "gpt", "openrouter", "ollama", "MISTRAL"
 CURRENT_PROVIDER = "groq_llama-3.3"
 
-INPUT_FILE = "responses_results_codestral-latest_1.csv"
-TARGET_MODEL_NAME = "codestral-latest_1"
+INPUT_FILE = "responses_results_codestral-latest_2.csv"
+TARGET_MODEL_NAME = "codestral-latest_2"
 SAFE_NAME = TARGET_MODEL_NAME.replace('/', '-')
 FINAL_OUTPUT_FILE = f"EVALUATE_{SAFE_NAME}_{CURRENT_PROVIDER}_final.csv"
 
-# --- KEY ROTATION SETUP ---
+# --- GROQ KEY ROTATION SETUP ---
 # In your .env file, set either:
 #   GROQ_API_KEYS=key1,key2,key3   (multiple keys, comma-separated)
 #   GROQ_API_KEY=key1              (single key, backward-compatible)
 GROQ_KEYS_RAW = os.getenv("GROQ_API_KEYS", os.getenv("GROQ_API_KEY", ""))
 GROQ_API_KEYS = [k.strip() for k in GROQ_KEYS_RAW.split(",") if k.strip()]
+
+# --- VT KEY ROTATION SETUP ---
+# In your .env file, set either:
+#   VT_API_KEYS=key1,key2,key3    (multiple keys, comma-separated)
+#   VT_API_KEY=key1               (single key, backward-compatible)
+VT_KEYS_RAW = os.getenv("VT_API_KEYS", os.getenv("VT_API_KEY", ""))
+VT_API_KEYS = [k.strip() for k in VT_KEYS_RAW.split(",") if k.strip()]
+
+# Active VT key index — module-level so all VT functions share the same state
+_vt_key_idx = 0
+
+def _get_vt_key() -> str:
+    """Return the currently active VT API key."""
+    return VT_API_KEYS[_vt_key_idx] if VT_API_KEYS else ""
+
+def _rotate_vt_key() -> bool:
+    """
+    Advance to the next VT key (round-robin).
+
+    Returns:
+        bool: True if rotation succeeded and a new key is available.
+              False if only one key exists (no rotation possible).
+    """
+    global _vt_key_idx
+    if len(VT_API_KEYS) <= 1:
+        return False
+    _vt_key_idx = (_vt_key_idx + 1) % len(VT_API_KEYS)
+    return True
 
 GEMINI_API_KEY     = os.getenv("GEMINI_API_KEY")
 PPLX_API_KEY       = os.getenv("PPLX_API_KEY")
@@ -54,7 +82,6 @@ HF_TOKEN           = os.getenv("HF_TOKEN")
 OPEN_AI_KEY        = os.getenv("OPENAI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MISTRAL_API_KEY    = os.getenv("MISTRAL_API_KEY")
-VT_API_KEY         = os.getenv("VT_API_KEY")
 
 # VT API URLs
 VT_FILES_URL    = "https://www.virustotal.com/api/v3/files/{id}"
@@ -138,50 +165,115 @@ def extract_code_from_response(text: str) -> str:
 
 def _vt_should_skip(mb_status: str) -> bool:
     """
-    FIX 6: Decide whether to skip VT entirely based on MB outcome.
+    Decide whether to skip VT entirely based on MB outcome.
 
     VT is skipped (VT_Status="skipped") when:
-        - MB_Status == "refusal": the response is a text refusal with no code.
-          Submitting it to VT wastes quota and pollutes results.
-        - MB_Status == "error": the MB evaluator failed technically (API down,
-          rate-limit exhausted). There is no code to scan.
+        - MB_Status == "refusal": plain-text refusal with no code. Submitting
+          it to VT wastes quota and pollutes results.
+        - MB_Status == "error": MB evaluator failed; no reliable code to scan.
 
-    VT is NOT skipped for any other MB status ("ok", blank, pd.NA) — those
-    rows have real code that is worth scanning.
-
-    Args:
-        mb_status (str): Lowercase MB_Status string from the checkpoint row.
-
-    Returns:
-        bool: True if VT should be skipped for this row.
+    VT is NOT skipped for "ok", blank, or pd.NA — those rows have real code.
     """
     return mb_status in ("refusal", "error")
 
 
-def get_existing_report(sha256_hash: str):
-    url = VT_FILES_URL.format(id=sha256_hash)
-    headers = {"x-apikey": VT_API_KEY}
-    try:
-        response = requests.get(url, headers=headers, timeout=30)
-        if response.status_code == 200:
-            return 200, response.json()
-        return response.status_code, None
-    except Exception:
-        return None, None
+def get_existing_report(sha256_hash: str, label: str = "?") -> tuple:
+    """
+    GET /v3/files/{hash} using the current active VT key.
+
+    On HTTP 429, rotates to the next VT key and retries once immediately.
+    If all keys are exhausted, returns (429, None) to the caller.
+
+    Args:
+        sha256_hash: SHA256 hex digest to look up.
+        label: Row label string for log messages.
+
+    Returns:
+        tuple: (status_code, json_data_or_None)
+    """
+    total_keys    = len(VT_API_KEYS)
+    tried_keys    = set()
+
+    while len(tried_keys) < total_keys:
+        current_key = _get_vt_key()
+        key_n       = _vt_key_idx + 1
+        tried_keys.add(_vt_key_idx)
+
+        url = VT_FILES_URL.format(id=sha256_hash)
+        try:
+            response = requests.get(url, headers={"x-apikey": current_key}, timeout=30)
+
+            if response.status_code == 200:
+                return 200, response.json()
+
+            if response.status_code == 429:
+                print(f"[{label}] VT GET — quota on key #{key_n}, rotating.")
+                if not _rotate_vt_key():
+                    # Only one key — caller must stop
+                    return 429, None
+                # More keys available — loop immediately
+                continue
+
+            return response.status_code, None
+
+        except Exception as e:
+            print(f"[{label}] VT GET error on key #{key_n}: {e}")
+            return None, None
+
+    # All keys returned 429
+    print(f"[{label}] VT GET — all {total_keys} VT keys quota-exhausted.")
+    return 429, None
 
 
-def upload_file(code_content: str) -> tuple:
-    headers = {"x-apikey": VT_API_KEY}
-    files = {"file": ("suspicious_code.txt", io.BytesIO(code_content.encode('utf-8')))}
-    try:
-        response = requests.post(VT_UPLOAD_URL, headers=headers, files=files)
-        if response.status_code == 200:
-            return response.json()['data']['id'], False
-        elif response.status_code == 429:
-            return None, True
-        return None, False
-    except Exception:
-        return None, False
+def upload_file(code_content: str, label: str = "?") -> tuple:
+    """
+    POST /v3/files using the current active VT key.
+
+    On HTTP 429, rotates to the next VT key and retries once immediately.
+    If all keys are exhausted, returns (None, True) so the caller stops all
+    VT work for this run.
+
+    Args:
+        code_content: Raw code text to submit as a plain-text file.
+        label: Row label string for log messages.
+
+    Returns:
+        tuple: (analysis_id_or_None, quota_hit_bool)
+    """
+    total_keys = len(VT_API_KEYS)
+    tried_keys = set()
+
+    while len(tried_keys) < total_keys:
+        current_key = _get_vt_key()
+        key_n       = _vt_key_idx + 1
+        tried_keys.add(_vt_key_idx)
+
+        files = {"file": ("suspicious_code.txt", io.BytesIO(code_content.encode('utf-8')))}
+        try:
+            response = requests.post(
+                VT_UPLOAD_URL,
+                headers={"x-apikey": current_key},
+                files=files
+            )
+
+            if response.status_code == 200:
+                return response.json()['data']['id'], False
+
+            if response.status_code == 429:
+                print(f"[{label}] VT POST — quota on key #{key_n}, rotating.")
+                if not _rotate_vt_key():
+                    return None, True
+                continue
+
+            return None, False
+
+        except Exception as e:
+            print(f"[{label}] VT POST error on key #{key_n}: {e}")
+            return None, False
+
+    # All keys returned 429
+    print(f"[{label}] VT POST — all {total_keys} VT keys quota-exhausted.")
+    return None, True
 
 
 def parse_vt_response(json_data) -> dict:
@@ -286,19 +378,14 @@ _VT_RESULT_COLS = [
     "Threat_Category", "Threat_Label", "Engines_List",
 ]
 
-# VT statuses that mean "no real code was scanned — never retry VT for this row"
-_VT_SKIP_STATUSES = {"skipped"}
-
-# VT statuses that mean "submitted and waiting — do NOT re-upload"
-_VT_PENDING_STATUSES = {"pending"}
-
-# VT statuses that mean "fully done"
+_VT_SKIP_STATUSES     = {"skipped"}
+_VT_PENDING_STATUSES  = {"pending"}
 _VT_COMPLETE_STATUSES = {"complete"}
 
 
 def classify_row(row) -> str:
     """
-    Classify a checkpoint row into one of four evaluation states.
+    Classify a checkpoint row into one of three evaluation states.
 
     MB terminal states
     ──────────────────
@@ -309,7 +396,7 @@ def classify_row(row) -> str:
     VT terminal states
     ──────────────────
     "complete" — fully analysed.
-    "skipped"  — intentionally skipped (refusal/error row); treated as done.
+    "skipped"  — intentionally skipped; treated as done.
     "pending"  — uploaded, awaiting VT analysis.
 
     States returned
@@ -334,7 +421,6 @@ def classify_row(row) -> str:
     except (TypeError, ValueError):
         mb_status_str = ""
 
-    # "error" is NOT terminal — only "refusal" and populated scores are done.
     mb_complete = all(is_populated(c) for c in REQUIRED_SCORE_COLS) or mb_status_str == "refusal"
 
     vt_status_raw = sanitize_value(
@@ -345,13 +431,10 @@ def classify_row(row) -> str:
     except (TypeError, ValueError):
         vt_status = ""
 
-    # "skipped" counts as done for VT (intentional — no code to scan)
     if mb_complete and vt_status in _VT_COMPLETE_STATUSES | _VT_SKIP_STATUSES:
         return "COMPLETE"
-
     if mb_complete and vt_status in _VT_PENDING_STATUSES:
         return "PENDING_VT"
-
     return "INCOMPLETE"
 
 
@@ -561,7 +644,7 @@ Code to analyze:
 
     def __init__(self):
         self.model           = ACTIVE_MODEL_NAME
-        self.current_key_idx = 0  # Persists across rows — spreads load across key pool
+        self.current_key_idx = 0
 
     def _inject_current_key(self):
         if IS_GROQ_PROVIDER and GROQ_API_KEYS:
@@ -608,19 +691,15 @@ Code to analyze:
 
         Multi-key Groq path:
             Rotates to the next key on every 429. Stops after all keys in the
-            pool have been tried exactly once for this row. The rotation index
-            persists so the next row starts from the last healthy key.
+            pool have been tried exactly once for this row.
 
         Single-key / non-Groq path:
             3 attempts, 20*attempt-second sleep between retries.
 
-        Terminal states written to MB_Status:
-            "ok"      — scored successfully. VT will proceed normally.
-            "refusal" — permanent text refusal, no code block found.
-                        VT will be SKIPPED for this row (FIX 6).
-            "error"   — technical/rate-limit failure. Row is INCOMPLETE so
-                        the next run retries MB automatically (FIX 4).
-                        VT will also be SKIPPED for this row (FIX 6).
+        Terminal states:
+            "ok"      — scored successfully.
+            "refusal" — permanent refusal, VT skipped.
+            "error"   — technical failure, retryable on next run, VT skipped.
         """
         label      = f"Row {row_idx}" if row_idx is not None else "Row ?"
         resp_txt   = str(row_series.get("response", ""))[:2000]
@@ -633,7 +712,7 @@ Code to analyze:
             while len(tried_keys_this_row) < total_keys:
                 self._inject_current_key()
                 key_n = self.current_key_idx + 1
-                print(f"[{label}] MB running | Key #{key_n}/{total_keys}")
+                print(f"[{label}] MB running | Groq Key #{key_n}/{total_keys}")
 
                 try:
                     resp = litellm.completion(
@@ -648,7 +727,7 @@ Code to analyze:
                     raw_score, normalized, reasoning = self._parse(raw_output)
 
                     if raw_score is not None:
-                        print(f"[{label}] MB complete — score={raw_score} (Key #{key_n})")
+                        print(f"[{label}] MB complete — score={raw_score} (Groq Key #{key_n})")
                         return {
                             "MalwareBench_Score":      raw_score,
                             "MalwareBench_Reasoning":  reasoning,
@@ -657,7 +736,7 @@ Code to analyze:
                         }
 
                     tried_keys_this_row.add(self.current_key_idx)
-                    print(f"[{label}] MB parse failed on Key #{key_n}, trying next key.")
+                    print(f"[{label}] MB parse failed on Groq Key #{key_n}, trying next.")
                     self._rotate_key()
 
                 except Exception as e:
@@ -665,14 +744,14 @@ Code to analyze:
                     tried_keys_this_row.add(self.current_key_idx)
 
                     if "429" in error_str or "rate limit" in error_str or "rate_limit" in error_str:
-                        print(f"[{label}] Rate limit on Key #{key_n} — rotating.")
+                        print(f"[{label}] Rate limit on Groq Key #{key_n} — rotating.")
                         self._rotate_key()
                     else:
-                        print(f"[{label}] MB API error on Key #{key_n}: {e}")
+                        print(f"[{label}] MB API error on Groq Key #{key_n}: {e}")
                         self._rotate_key()
                         time.sleep(3)
 
-            print(f"[{label}] All {total_keys} keys exhausted — MB=error (will retry next run)")
+            print(f"[{label}] All {total_keys} Groq keys exhausted — MB=error (will retry next run)")
 
         # ── SINGLE-KEY PATH ──────────────────────────────────────────────
         else:
@@ -719,7 +798,7 @@ Code to analyze:
                 "MalwareBench_Reasoning":  "Model refused to generate code. No valid code block found.",
             }
         else:
-            print(f"[{label}] MB — technical failure, MB=error. VT will be skipped. Will retry MB next run.")
+            print(f"[{label}] MB — technical failure, MB=error. VT skipped. Will retry MB next run.")
             return {
                 "MalwareBench_Score":      pd.NA,
                 "MalwareBench_Normalized": pd.NA,
@@ -736,24 +815,21 @@ def run_vt_for_row(result_row: dict, row_idx=None) -> tuple:
     """
     Execute the VirusTotal new-submission pipeline (Workflow A).
 
-    Assumes the caller has already verified that VT should NOT be skipped
-    (i.e., _vt_should_skip returned False) and that the local cache produced
-    no hit.
+    Both get_existing_report() and upload_file() now handle VT key rotation
+    internally. This function only needs to react to the final outcome.
 
     Steps:
-        1. Extract code, compute SHA256, set Web_Link immediately.
-        2. GET /v3/files/{hash}:
-            - 200 → pull existing report, VT_Status=complete.
-            - 404 → upload via POST, VT_Status=pending.
-            - 429 → quota_hit=True, caller stops all VT work.
-            - other → retry up to 3 times, then VT_Status=error.
+        1. Extract code, compute SHA256, set Web_Link.
+        2. GET /v3/files/{hash}  (rotates keys on 429 internally).
+        3. On 404: POST /v3/files (rotates keys on 429 internally).
 
     Returns:
         tuple: (result_row, quota_hit)
+            quota_hit=True means ALL VT keys are exhausted — stop all VT work.
     """
     label = f"Row {row_idx}" if row_idx is not None else "Row ?"
 
-    if not VT_API_KEY:
+    if not VT_API_KEYS:
         result_row.update(_VT_NA_COLS)
         result_row["VT_Status"] = "error"
         return result_row, False
@@ -771,8 +847,8 @@ def run_vt_for_row(result_row: dict, row_idx=None) -> tuple:
 
     for attempt in range(1, 4):
         try:
-            status_code, existing = get_existing_report(sha256_hash)
-            time.sleep(16)
+            status_code, existing = get_existing_report(sha256_hash, label=label)
+            time.sleep(8)
 
             if status_code == 200:
                 print(f"[{label}] VT — hash found, pulling results")
@@ -782,19 +858,28 @@ def run_vt_for_row(result_row: dict, row_idx=None) -> tuple:
                 result_row["Web_Link"]  = web_link
                 return result_row, False
 
+            elif status_code == 429:
+                # All VT keys exhausted during GET
+                print(f"[{label}] VT — all VT keys quota-exhausted (GET), stopping")
+                result_row.update(_VT_NA_COLS)
+                result_row["Web_Link"]  = web_link
+                result_row["VT_Status"] = "error"
+                return result_row, True
+
             elif status_code == 404:
-                analysis_id, quota_hit = upload_file(code)
-                time.sleep(16)
+                analysis_id, quota_hit = upload_file(code, label=label)
+                time.sleep(8)
 
                 if quota_hit:
-                    print(f"[{label}] VT — quota exhausted (429), saving and stopping")
+                    # All VT keys exhausted during POST
+                    print(f"[{label}] VT — all VT keys quota-exhausted (POST), stopping")
                     result_row.update(_VT_NA_COLS)
                     result_row["Web_Link"]  = web_link
                     result_row["VT_Status"] = "error"
                     return result_row, True
 
                 if analysis_id:
-                    print(f"[{label}] VT — new file uploaded, VT_Status=pending")
+                    print(f"[{label}] VT — new file uploaded (VT Key #{_vt_key_idx + 1}), VT_Status=pending")
                     result_row["VT_Status"] = "pending"
                     result_row["Web_Link"]  = web_link
                     for k in _VT_RESULT_COLS:
@@ -804,14 +889,6 @@ def run_vt_for_row(result_row: dict, row_idx=None) -> tuple:
                     if attempt < 3:
                         time.sleep(2 * attempt)
                     continue
-
-            elif status_code == 429:
-                print(f"[{label}] VT — quota exhausted (429), saving and stopping")
-                time.sleep(60)
-                result_row.update(_VT_NA_COLS)
-                result_row["Web_Link"]  = web_link
-                result_row["VT_Status"] = "error"
-                return result_row, True
 
             else:
                 if attempt < 3:
@@ -832,6 +909,7 @@ def run_vt_for_row(result_row: dict, row_idx=None) -> tuple:
 def poll_vt_row(result_row: dict) -> tuple:
     """
     Poll VT for a completed analysis on a PENDING_VT row (Workflow B).
+    Key rotation is handled inside get_existing_report().
 
     Returns:
         tuple: (updated_row, quota_hit, had_error)
@@ -850,7 +928,7 @@ def poll_vt_row(result_row: dict) -> tuple:
         if status_code == 429:
             return result_row, True, False
 
-        time.sleep(16)
+        time.sleep(8)
 
         if status_code == 200 and existing:
             vt_data = parse_vt_response(existing)
@@ -925,7 +1003,7 @@ def _poll_pending_inplace(out_df: pd.DataFrame, idx: int, row_n: int) -> bool:
     Poll VT for a PENDING_VT row and update VT columns in-place.
 
     Returns:
-        bool: True if quota exhausted and all VT polling must stop.
+        bool: True if all VT keys quota-exhausted and polling must stop.
     """
     row_dict = out_df.loc[idx].to_dict()
 
@@ -933,7 +1011,7 @@ def _poll_pending_inplace(out_df: pd.DataFrame, idx: int, row_n: int) -> bool:
         updated_row, quota_hit, had_error = poll_vt_row(row_dict)
 
         if quota_hit:
-            print(f"[Row {row_n}] VT — quota exhausted (429), saving and stopping")
+            print(f"[Row {row_n}] VT — all keys quota-exhausted, saving and stopping")
             save_output_file(out_df)
             return True
 
@@ -955,29 +1033,14 @@ def _poll_pending_inplace(out_df: pd.DataFrame, idx: int, row_n: int) -> bool:
     return False
 
 
-def _vt_local_cache_lookup(out_df: pd.DataFrame, weblink: str, row_n: int) -> bool:
+def _vt_local_cache_lookup(out_df: pd.DataFrame, weblink: str) -> str | None:
     """
-    FIX 7 (upgraded cache): Check out_df for any prior row with the same
-    Web_Link that is already complete OR pending.
-
-    - complete → copy all VT result columns to the current row immediately.
-    - pending  → copy only VT_Status="pending" and Web_Link so the current
-                 row joins the queue without issuing a new GET or POST.
-
-    In both cases returns True (cache hit) so the caller skips the API call.
-    Returns False if no matching row exists (cache miss → proceed to API).
-
-    Args:
-        out_df: Full checkpoint DataFrame (may be modified in-place via idx).
-        weblink: The computed Web_Link for the current row.
-        row_n:  1-based row number for log messages.
+    Check out_df for any prior row with the same Web_Link that is complete or pending.
 
     Returns:
-        bool: True = cache hit (no API call needed).
-              False = cache miss (caller should call run_vt_for_row).
-
-    Note: This function only performs the lookup and returns the result.
-    The caller is responsible for writing the copied values to out_df.
+        "complete" — a finished row exists; caller should copy its results.
+        "pending"  — an uploaded-but-unfinished row exists; caller inherits pending.
+        None       — cache miss; caller must call the VT API.
     """
     mask_complete = (
         (out_df["Web_Link"].astype(str) == weblink) &
@@ -993,7 +1056,7 @@ def _vt_local_cache_lookup(out_df: pd.DataFrame, weblink: str, row_n: int) -> bo
     if mask_pending.any():
         return "pending"
 
-    return None   # cache miss
+    return None
 
 
 # ==============================
@@ -1008,29 +1071,26 @@ def run_pipeline():
     ────────────
     FIX 1 — Row matching by row_hash (not forbidden_prompt).
     FIX 2 — Local VT cache for complete rows (no duplicate GET/POST).
-    FIX 3 — Selective VT_Status reset: "error"/"skipped" → NA; "pending" kept.
+    FIX 3 — Selective VT_Status reset: "error" → NA; "pending"/"skipped" kept.
     FIX 4 — MB "error" is retryable (not terminal).
     FIX 5 — Groq key rotation on 429.
     FIX 6 — VT skipped entirely when MB_Status is "refusal" or "error".
-             Submitting refusal text to VT wastes quota: a refusal is plain
-             text, not code, and contributes nothing to the scan results.
-             MB "error" rows also have no code to submit.
-    FIX 7 — Upgraded local cache: also matches "pending" rows so the same
-             file is never uploaded twice even across consecutive rows in the
-             same run.
-
-    VT_Status values written by this pipeline
-    ──────────────────────────────────────────
-    "complete"  — VT analysis finished; result columns populated.
-    "pending"   — File uploaded; VT is still processing.
-    "skipped"   — No code to scan (refusal or MB error); treated as COMPLETE.
-    "error"     — VT API failure; reset to NA on next load so it is retried.
+    FIX 7 — Upgraded local cache: matches "pending" rows too.
+    FIX 8 — VT key rotation: get_existing_report() and upload_file() rotate
+             through VT_API_KEYS on 429 before returning quota_hit=True.
+             Configure in .env:
+               VT_API_KEYS=vtkey1,vtkey2,vtkey3   (multiple, comma-separated)
+               VT_API_KEY=vtkey1                  (single, backward-compatible)
     """
     print(f"Starting Pipeline — Provider: {CURRENT_PROVIDER} | Model: {ACTIVE_MODEL_NAME}")
     print(f"Input: {INPUT_FILE} | Output: {FINAL_OUTPUT_FILE}")
 
     if IS_GROQ_PROVIDER:
-        print(f"Groq key pool: {len(GROQ_API_KEYS)} key(s) loaded.")
+        print(f"Groq key pool : {len(GROQ_API_KEYS)} key(s)")
+    print(f"VT key pool   : {len(VT_API_KEYS)} key(s)")
+
+    if not VT_API_KEYS:
+        print("WARNING: No VT API key found. VT scanning will be skipped for all rows.")
 
     df_input = safe_read_csv(INPUT_FILE)
     if df_input.empty:
@@ -1058,9 +1118,7 @@ def run_pipeline():
     else:
         print(f"Loaded {len(out_df)} existing rows from {FINAL_OUTPUT_FILE}")
 
-    # FIX 3: Reset only "error" VT statuses to NA so they are retried.
-    # "pending" is preserved — those files were already uploaded.
-    # "skipped" is preserved — those rows intentionally have no VT data.
+    # FIX 3: Reset only "error" VT statuses. Keep "pending" and "skipped" intact.
     if not out_df.empty and "VT_Status" in out_df.columns:
         out_df["VT_Status"] = out_df["VT_Status"].replace({"error": pd.NA})
 
@@ -1103,7 +1161,6 @@ def run_pipeline():
         except (TypeError, ValueError):
             mb_populated = bool(mb_score)
 
-        # FIX 4: Only "refusal" skips MB re-evaluation. "error" → retry.
         mb_already_done = mb_populated or mb_status_cur == "refusal"
 
         if not mb_already_done:
@@ -1134,8 +1191,7 @@ def run_pipeline():
             )
             out_df.to_csv(FINAL_OUTPUT_FILE, index=False, encoding="utf-8-sig")
 
-            # Refresh mb_status_cur after evaluation so the VT block below
-            # sees the updated status immediately (not the stale loop value).
+            # Refresh so VT block below sees the updated status immediately
             mb_status_cur = str(out_df.at[existing_idx, "MB_Status"]).strip().lower()
         else:
             print(f"[Row {row_n}] MB already done (status={mb_status_cur or 'populated'}) — skipping")
@@ -1151,10 +1207,7 @@ def run_pipeline():
         except (TypeError, ValueError):
             vt_status_str = ""
 
-        # FIX 6: Skip VT entirely for refusal/error MB rows.
-        # Refusal rows contain only plain-text apologies — not code.
-        # Error rows failed MB so there is no reliable code to submit.
-        # Both states set VT_Status="skipped" which classify_row treats as COMPLETE.
+        # FIX 6: Skip VT for refusal/error MB rows — no code to scan.
         if _vt_should_skip(mb_status_cur):
             if vt_status_str != "skipped":
                 print(f"[Row {row_n}] VT — skipping (MB_Status={mb_status_cur}, no code to scan)")
@@ -1168,7 +1221,6 @@ def run_pipeline():
             print(f"[Row {row_n}] VT — already complete, skipping")
 
         elif vt_status_str in _VT_PENDING_STATUSES:
-            # Workflow B: poll for completed report
             quota_hit = _poll_pending_inplace(out_df, existing_idx, row_n)
             if quota_hit:
                 break
@@ -1179,11 +1231,10 @@ def run_pipeline():
             current_hash    = calculate_sha256(current_code)
             current_weblink = f"https://www.virustotal.com/gui/file/{current_hash}"
 
-            # FIX 2 + FIX 7: Upgraded local cache — match complete OR pending.
-            cache_state = _vt_local_cache_lookup(out_df, current_weblink, row_n)
+            # FIX 2 + FIX 7: Local cache — check complete then pending.
+            cache_state = _vt_local_cache_lookup(out_df, current_weblink)
 
             if cache_state == "complete":
-                # Copy all result columns from the already-complete row.
                 complete_row = out_df[
                     (out_df["Web_Link"].astype(str) == current_weblink) &
                     (out_df["VT_Status"].astype(str).str.strip().str.lower() == "complete")
@@ -1195,14 +1246,13 @@ def run_pipeline():
                 out_df.to_csv(FINAL_OUTPUT_FILE, index=False, encoding="utf-8-sig")
 
             elif cache_state == "pending":
-                # Another row already uploaded this file — just inherit pending.
                 print(f"[Row {row_n}] VT — cache hit (pending). File already uploaded, marking pending.")
                 out_df.at[existing_idx, "VT_Status"] = "pending"
                 out_df.at[existing_idx, "Web_Link"]  = current_weblink
                 out_df.to_csv(FINAL_OUTPUT_FILE, index=False, encoding="utf-8-sig")
 
             else:
-                # Cache miss — full API call
+                # Cache miss — full API call (FIX 8: key rotation inside helpers)
                 row_dict = out_df.loc[existing_idx].to_dict()
                 row_dict, quota_hit = run_vt_for_row(row_dict, row_idx=row_n)
                 for col in ["VT_Status", "Web_Link"] + _VT_RESULT_COLS:
