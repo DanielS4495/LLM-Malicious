@@ -416,7 +416,7 @@ def layer1_descriptive(df: pd.DataFrame, out: Path) -> pd.DataFrame:
         pd.DataFrame: Descriptive statistics table indexed by column label.
             Empty DataFrame if no numeric data is available.
     """
-    print("  -> Layer 1: Descriptive statistics")
+    print("  -> Descriptive statistics")
     rows = []
     for col in ["MalwareBench_Score", "MalwareBench_Normalized"]:
         d = describe_series(df[col], label=col)
@@ -424,7 +424,7 @@ def layer1_descriptive(df: pd.DataFrame, out: Path) -> pd.DataFrame:
             rows.append(d)
 
     result = pd.DataFrame(rows).set_index("label")
-    result.to_csv(out / "L1_descriptive_statistics.csv")
+    result.to_csv(out / "descriptive_statistics.csv")
     return result
 
 
@@ -456,7 +456,7 @@ def layer2_binary(df: pd.DataFrame, threshold: float, out: Path) -> dict:
             "refusal_rate" (if MB_Status present) — n, refusal_count,
                 refusal_rate.
     """
-    print("  -> Layer 2: Binary success/failure analysis")
+    print("  -> Binary success/failure analysis")
     result = {}
 
     s = df["MalwareBench_Normalized"].dropna()
@@ -557,20 +557,20 @@ def layer3_agreement(df: pd.DataFrame, threshold: float, out: Path, plots: Path)
         out (Path): Output directory for CSV files.
         plots (Path): Output directory for plot files.
     """
-    print("  -> Layer 3: Score agreement analysis (MB vs VT)")
+    print("  -> Score agreement analysis (MB vs VT)")
 
     if "Malicious_Count" not in df.columns or df["Malicious_Count"].isna().all():
-        print("     [WARN] Malicious_Count absent or all-NaN -- Layer 3 MB vs VT agreement skipped")
-        pd.DataFrame([{"note": "VT Malicious_Count absent -- Layer 3 MB vs VT agreement not applicable"}]
-                     ).to_csv(out / "L3_agreement_analysis.csv", index=False)
+        print("     [WARN] Malicious_Count absent or all-NaN --  MB vs VT agreement skipped")
+        pd.DataFrame([{"note": "VT Malicious_Count absent -- MB vs VT agreement not applicable"}]
+                     ).to_csv(out / "agreement_analysis.csv", index=False)
         return
 
     sub = df[["MalwareBench_Normalized", "Malicious_Count"]].copy()
     sub["Malicious_Count"] = pd.to_numeric(sub["Malicious_Count"], errors="coerce")
     sub = sub.dropna()
     if len(sub) == 0:
-        pd.DataFrame([{"note": "No rows with both MB and VT scores -- Layer 3 skipped"}]
-                     ).to_csv(out / "L3_agreement_analysis.csv", index=False)
+        pd.DataFrame([{"note": "No rows with both MB and VT scores --  skipped"}]
+                     ).to_csv(out / "agreement_analysis.csv", index=False)
         return
 
     n        = len(sub)
@@ -588,7 +588,7 @@ def layer3_agreement(df: pd.DataFrame, threshold: float, out: Path, plots: Path)
         {"bucket": "VT Only Malicious",  "count": vt_only_mal, "pct": round(vt_only_mal / n * 100, 2)},
         {"bucket": "MB Only Malicious",  "count": mb_only_mal, "pct": round(mb_only_mal / n * 100, 2)},
     ])
-    agreement_df.to_csv(out / "L3_agreement_analysis.csv", index=False)
+    agreement_df.to_csv(out / "agreement_analysis.csv", index=False)
 
     if not HAS_MPL:
         return
@@ -620,7 +620,7 @@ def layer3_agreement(df: pd.DataFrame, threshold: float, out: Path, plots: Path)
                     f"{cell_labels[i][j]}\n{matrix_pct[i, j]:.1f}%",
                     ha="center", va="center", fontsize=11, fontweight="bold", color="black")
 
-    ax.set_title("Layer 3 \u2014 VT vs MB Agreement Analysis", fontsize=13, fontweight="bold")
+    ax.set_title(" \u2014 VT vs MB Agreement Analysis", fontsize=13, fontweight="bold")
     #fig.text(0.5, 0.93, f"n={n}  MB threshold={threshold}  VT threshold=Malicious_Count>0", ha="center", fontsize=9, color="gray")
 
     plt.tight_layout()
@@ -629,7 +629,7 @@ def layer3_agreement(df: pd.DataFrame, threshold: float, out: Path, plots: Path)
              f"at which both static (MB) and dynamic (VT) evaluation agree the output is malicious\n"
              f"(i.e., the lowest MB score among rows where Malicious_Count > 0).",
              ha="center", fontsize=9, color="black")
-    plt.savefig(plots / "L3_agreement_analysis.png", dpi=150, bbox_inches="tight")
+    plt.savefig(plots / "agreement_analysis.png", dpi=150, bbox_inches="tight")
     plt.close()
 
 
@@ -660,7 +660,7 @@ def layer4_continuous(df: pd.DataFrame, threshold: float, out: Path, plots: Path
         out (Path): Output directory (unused in this layer; plots only).
         plots (Path): Output directory for plot files.
     """
-    print("  -> Layer 4: Per-model distributions + combined overlay")
+    print("  -> Per-model distributions + combined overlay")
 
     if not HAS_MPL:
         return
@@ -686,7 +686,7 @@ def layer4_continuous(df: pd.DataFrame, threshold: float, out: Path, plots: Path
         figsize=(max(6, n_models * 4), fig_h),
         squeeze=False,
     )
-    fig1.suptitle("Layer 4 \u2014 Per-Model Score Distributions", fontsize=13, fontweight="bold")
+    fig1.suptitle(" \u2014 Per-Model Score Distributions", fontsize=13, fontweight="bold")
 
     for row_i, metric in enumerate(metrics):
         for col_j, model in enumerate(models):
@@ -860,7 +860,7 @@ def layer5_segmentation(df: pd.DataFrame, out: Path, plots: Path):
         out (Path): Output directory for CSV files.
         plots (Path): Output directory for plot files.
     """
-    print("  -> Layer 5: Segmentation / slicing by attack method")
+    print("  ->  Segmentation / slicing by attack method")
 
     if "attack_method" not in df.columns or df["attack_method"].isna().all():
         print("     [skip] attack_method column missing")
@@ -895,7 +895,7 @@ def layer5_segmentation(df: pd.DataFrame, out: Path, plots: Path):
         return
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-    fig.suptitle("Layer 5 -- Segmentation by Attack Method", fontsize=13, fontweight="bold")
+    fig.suptitle("Segmentation by Attack Method", fontsize=13, fontweight="bold")
 
     colors = [COLOR_MAL if v >= 0.5 else COLOR_WARN if v >= 0.3 else COLOR_SAFE
               for v in mb_seg["mean"]]
@@ -920,7 +920,7 @@ def layer5_segmentation(df: pd.DataFrame, out: Path, plots: Path):
 # ==============================================================================
 
 def layer6_tokens_vs_score(df: pd.DataFrame, out: Path, plots: Path):
-    print("  -> Layer 6: Token count vs score")
+    print("  -> Token count vs score")
 
     rows = []
     for tok_col in ["response_char_tokens_approx"]:
@@ -945,7 +945,7 @@ def layer6_tokens_vs_score(df: pd.DataFrame, out: Path, plots: Path):
             })
 
     corr_df = pd.DataFrame(rows)
-    corr_df.to_csv(out / "L6_token_vs_score.csv", index=False)
+    corr_df.to_csv(out / "token_vs_score.csv", index=False)
 
     # Binned analysis
     bin_rows = []
@@ -972,7 +972,7 @@ def layer6_tokens_vs_score(df: pd.DataFrame, out: Path, plots: Path):
                     "median_score": round(s.median(), 4),
                     "failure_rate_50pct": round((s >= 0.5).mean(), 4),
                 })
-        pd.DataFrame(bin_rows).to_csv(out / "L6_token_bins.csv", index=False)
+        pd.DataFrame(bin_rows).to_csv(out / "token_bins.csv", index=False)
 
     if not HAS_MPL or corr_df.empty:
         return
@@ -1016,7 +1016,7 @@ def layer6_tokens_vs_score(df: pd.DataFrame, out: Path, plots: Path):
              ha="center", fontsize=9, color="black")
 
     plt.tight_layout()
-    plt.savefig(plots / "L6_tokens_vs_score.png", dpi=150, bbox_inches="tight")
+    plt.savefig(plots / "tokens_vs_score.png", dpi=150, bbox_inches="tight")
     plt.close()
 
 # ==============================================================================
@@ -1051,7 +1051,7 @@ def layer7_stability(df: pd.DataFrame, out: Path, plots: Path) -> dict:
             consistency_score, cv_pct, n_near_zero, n_near_one, n_extreme.
             Returns an empty dict if no data is available.
     """
-    print("  -> Layer 7: Stability & robustness analysis")
+    print("  ->  Stability & robustness analysis")
 
     result = {}
     for col in ["MalwareBench_Normalized"]:
@@ -1096,7 +1096,7 @@ def layer7_stability(df: pd.DataFrame, out: Path, plots: Path) -> dict:
         return result
 
     fig, ax = plt.subplots(1, 1, figsize=(10, 5))
-    fig.suptitle("Layer 7 -- Stability & Robustness", fontsize=13, fontweight="bold")
+    fig.suptitle("Stability & Robustness", fontsize=13, fontweight="bold")
 
     col = "MalwareBench_Normalized"
     s = df[col].dropna()
@@ -1158,49 +1158,49 @@ def layer8_correlation(df: pd.DataFrame, out: Path, plots: Path):
     if not HAS_MPL:
         return
 
-    fig, axes = plt.subplots(1, len(models), figsize=(8 * len(models), 7))
-    if len(models) == 1:
-        axes = [axes]
-
-    fig.suptitle("Spearman Correlation per Model", fontsize=13, fontweight="bold")
-
-    for ax, model in zip(axes, models):
+    # One large PNG per model/run
+    for model in models:
         model_df = df[df["target_model"] == model]
         avail_cols = [c for c in base_cols if c in model_df.columns]
         sub = model_df[avail_cols].dropna()
 
         if len(sub) < 5:
-            ax.set_visible(False)
+            print(f"     [SKIP] {model}: fewer than 5 complete rows")
             continue
 
         matrix = sub.corr(method="spearman")
 
         # save CSV per model
         safe_name = model.replace(" ", "_")
-        matrix.to_csv(out / f"L8_spearman_{safe_name}.csv")
+        matrix.to_csv(out / f"spearman_{safe_name}.csv")
+
+        fig, ax = plt.subplots(figsize=(10, 8))
+        fig.suptitle(f"Spearman Correlation — {model}", fontsize=14, fontweight="bold")
 
         vals = matrix.values
         im = ax.imshow(vals, cmap="coolwarm", vmin=-1, vmax=1, aspect="auto")
-        plt.colorbar(im, ax=ax)
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
         ax.set_xticks(range(len(matrix.columns)))
-        ax.set_xticklabels(matrix.columns, rotation=15, ha="right", fontsize=9)
+        ax.set_xticklabels(matrix.columns, rotation=20, ha="right", fontsize=11)
         ax.set_yticks(range(len(matrix.index)))
-        ax.set_yticklabels(matrix.index, fontsize=9)
-        ax.set_title(model, fontsize=11, fontweight="bold")
+        ax.set_yticklabels(matrix.index, fontsize=11)
 
         for i in range(len(matrix.index)):
             for j in range(len(matrix.columns)):
                 ax.text(j, i, f"{vals[i, j]:.2f}",
-                        ha="center", va="center", fontsize=9, color="black")
+                        ha="center", va="center", fontsize=12, fontweight="bold",
+                        color="black")
 
-    plt.tight_layout()
-    fig.text(0.5, -0.08,
-             "Spearman correlation between maliciousness score, prompt length, response length, and VT detection count.\n"
-             "Values close to 1.0 indicate strong positive correlation. Each matrix represents one evaluated model.",
-             ha="center", fontsize=12, color="black")
+        fig.text(0.5, 0.01,
+                 "Spearman correlation between maliciousness score, prompt length, response length, and VT detection count.\n"
+                 "Values close to 1.0 indicate strong positive correlation.",
+                 ha="center", fontsize=10, color="gray")
 
-    plt.savefig(plots / "L8_correlation_heatmap.png", dpi=150, bbox_inches="tight")
-    plt.close()
+        plt.tight_layout(rect=[0, 0.06, 1, 1])
+        plt.savefig(plots / f"correlation_heatmap_{safe_name}.png", dpi=150, bbox_inches="tight")
+        plt.close()
+        print(f"     Saved: correlation_heatmap_{safe_name}.png")
 
 
 # ==============================================================================
@@ -1233,7 +1233,7 @@ def layer12_drift(df: pd.DataFrame, stability_data: dict, out: Path, plots: Path
         out (Path): Output directory for CSV files.
         plots (Path): Output directory for plot files.
     """
-    print("  -> Layer 12: Drift / temporal change (connected to Layer 7)")
+    print("  -> Drift / temporal change ")
 
     if "timestamp" not in df.columns or df["timestamp"].isna().all():
         print("     [skip] no timestamp column")
@@ -1292,7 +1292,7 @@ def layer12_drift(df: pd.DataFrame, stability_data: dict, out: Path, plots: Path
         return
 
     fig, ax = plt.subplots(1, 1, figsize=(10, 5))
-    fig.suptitle("Layer 12 -- Score Drift Over Time (Linked to Layer 7 Stability)",
+    fig.suptitle(" Score Drift Over Time )",
                  fontsize=13, fontweight="bold")
 
     col = "MalwareBench_Normalized"
@@ -1338,7 +1338,7 @@ def layer13_entropy(df: pd.DataFrame, out: Path, plots: Path):
         out (Path): Output directory for CSV files.
         plots (Path): Output directory (unused in this layer; no plot produced).
     """
-    print("  -> Layer 13: Entropy & uncertainty")
+    print("  -> Entropy & uncertainty")
 
     rows = []
     for col in ["MalwareBench_Normalized"]:
@@ -1400,7 +1400,7 @@ def layer14_error_taxonomy(df: pd.DataFrame, threshold: float, out: Path, plots:
         out (Path): Output directory for CSV files.
         plots (Path): Output directory for plot files.
     """
-    print("  -> Layer 14: Error taxonomy (MB primary signal)")
+    print("  -> Error taxonomy (MB primary signal)")
 
     # -- MB-based taxonomy ----------------------------------------------------
     mb_labels = []
@@ -1428,7 +1428,7 @@ def layer14_error_taxonomy(df: pd.DataFrame, threshold: float, out: Path, plots:
         return
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-    fig.suptitle("Layer 14 -- Error Taxonomy (MalwareBench 2.0)", fontsize=13, fontweight="bold")
+    fig.suptitle("Error Taxonomy (MalwareBench 2.0)", fontsize=13, fontweight="bold")
 
     mb_colors = [COLOR_MAL, COLOR_WARN, COLOR_SAFE, "gray"][:len(mb_tax)]
     axes[0].barh(mb_tax["mb_category"], mb_tax["count"], color=mb_colors)
@@ -1469,7 +1469,7 @@ def layer15_max_risk(df: pd.DataFrame, out: Path) -> pd.DataFrame:
         pd.DataFrame: The max risk summary table (same content as
             L15_max_risk.csv). Empty DataFrame if no data is available.
     """
-    print("  -> Layer 15: Max risk analysis")
+    print("  -> Max risk analysis")
 
     rows = []
     for col in ["MalwareBench_Normalized", "MalwareBench_Score"]:
@@ -1492,10 +1492,10 @@ def layer15_max_risk(df: pd.DataFrame, out: Path) -> pd.DataFrame:
                               "MalwareBench_Score", "MalwareBench_Normalized",
                               "MalwareBench_Reasoning"] if c in df.columns]
     worst_df = df.nlargest(10, sort_col)[keep_cols].reset_index(drop=True)
-    worst_df.to_csv(out / "L15_top10_worst_cases.csv", index=False)
+    worst_df.to_csv(out / "top10_worst_cases.csv", index=False)
 
     result = pd.DataFrame(rows)
-    result.to_csv(out / "L15_max_risk.csv", index=False)
+    result.to_csv(out / "max_risk.csv", index=False)
     return result
 
 
@@ -1531,7 +1531,7 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
             })
 
     comp_df = pd.DataFrame(rows)
-    comp_df.to_csv(out / "MC_model_comparison.csv", index=False)
+    comp_df.to_csv(out / "model_comparison.csv", index=False)
 
     if HAS_SCIPY and len(frames) >= 2:
         sig_rows = []
@@ -1555,7 +1555,7 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
                         else f"No significant difference between {n1} and {n2}"
                     ),
                 })
-        pd.DataFrame(sig_rows).to_csv(out / "MC_significance_tests.csv", index=False)
+        pd.DataFrame(sig_rows).to_csv(out / "significance_tests.csv", index=False)
 
     _vc_frames_avail = [
         (df_m, name) for df_m, name in zip(frames, model_names)
@@ -1578,7 +1578,7 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
                 "malicious_rate": round(float((vc > 0).mean()), 4),
             })
             vt_series_list.append((name, vc))
-        pd.DataFrame(vt_stat_rows).to_csv(out / "MC_model_comparison_VT.csv", index=False)
+        pd.DataFrame(vt_stat_rows).to_csv(out / "model_comparison_VT.csv", index=False)
 
         if HAS_SCIPY and len(vt_series_list) >= 2:
             vt_sig_rows = []
@@ -1602,7 +1602,7 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
                             else f"No significant difference between {n1} and {n2}"
                         ),
                     })
-            pd.DataFrame(vt_sig_rows).to_csv(out / "MC_significance_tests_VT.csv", index=False)
+            pd.DataFrame(vt_sig_rows).to_csv(out / "significance_tests_VT.csv", index=False)
 
     if not HAS_MPL or comp_df.empty:
         return
@@ -1640,7 +1640,7 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
     axes[2].set_ylabel("MalwareBench 2.0 Normalized")
 
     plt.tight_layout()
-    plt.savefig(plots / "MC_model_comparison.png", dpi=150, bbox_inches="tight")
+    plt.savefig(plots / "model_comparison.png", dpi=150, bbox_inches="tight")
     plt.close()
 
     if HAS_MPL:
@@ -1701,7 +1701,7 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
             )
             legend.get_title().set_fontsize(9)
             plt.tight_layout()
-            plt.savefig(plots / "MC_score_distribution_stacked.png", dpi=150, bbox_inches="tight")
+            plt.savefig(plots / "score_distribution_stacked.png", dpi=150, bbox_inches="tight")
             plt.close()
 
             if "Malicious_Count" in combined_df.columns and combined_df["Malicious_Count"].notna().any():
@@ -1774,7 +1774,7 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
                     )
                     lgnd_vt.get_title().set_fontsize(9)
                     plt.tight_layout()
-                    plt.savefig(plots / "MC_score_distribution_stacked_VT.png", dpi=150, bbox_inches="tight")
+                    plt.savefig(plots / "score_distribution_stacked_VT.png", dpi=150, bbox_inches="tight")
                     plt.close()
 
     if _vc_frames_avail and vt_stat_rows:
@@ -1808,7 +1808,7 @@ def model_comparison(frames: list[pd.DataFrame], model_names: list[str],
             axes_vt2[1].set_ylabel("Malicious Count (# AV engines)")
 
         plt.tight_layout()
-        plt.savefig(plots / "MC_model_comparison_VT.png", dpi=150, bbox_inches="tight")
+        plt.savefig(plots / "model_comparison_VT.png", dpi=150, bbox_inches="tight")
         plt.close()
 
 # ==============================================================================
@@ -2046,7 +2046,7 @@ def summary_dashboard(df: pd.DataFrame, l1: pd.DataFrame, l15: pd.DataFrame,
     for k, txt in enumerate(stats_text):
         ax4.text(0.05, 0.75 - k * 0.12, txt, transform=ax4.transAxes,
                  color="#aaaaaa", fontsize=8, va="top", family="monospace")
-    ax4.set_title("Layer 1 -- Descriptive Stats Summary", **title_kw)
+    ax4.set_title("Descriptive Stats Summary", **title_kw)
 
     # 5. Score over samples (MB_Score)
     ax5 = fig.add_subplot(gs[1, 0:3])
@@ -2096,10 +2096,10 @@ def summary_dashboard(df: pd.DataFrame, l1: pd.DataFrame, l15: pd.DataFrame,
             ax7.set_ylabel("MalwareBench 2.0 Score (0-10)", **label_kw)
             ax7.set_title("Per-Model MalwareBench 2.0 Score Distribution", **title_kw)
 
-    plt.savefig(plots / "DASHBOARD_summary.png", dpi=150, bbox_inches="tight",
+    plt.savefig(plots / "summary_dashboard.png", dpi=150, bbox_inches="tight",
                 facecolor=fig.get_facecolor())
     plt.close()
-    print("     Saved: DASHBOARD_summary.png")
+    print("     Saved: summary_dashboard.png")
 
 
 # ==============================================================================
@@ -2185,31 +2185,22 @@ def generate_html_report(out: Path, plots: Path, meta: dict):
 
     # --- Collect CSV sections ---
     layers = [
-        ("Layer 1 -- Descriptive Statistics",             out / "L1_descriptive_statistics.csv"),
-        ("Layer 2 -- Binary Analysis",                    out / "L2_binary_analysis.csv"),
-        ("Layer 3 -- Score Agreement Analysis",           out / "L3_agreement_analysis.csv"),
-        ("Layer 5 -- Segmentation",                       out / "L5_segmentation.csv"),
-        ("Layer 6 -- Token vs Score",                     out / "L6_token_vs_score.csv"),
-        ("Layer 6 -- Token Bins",                         out / "L6_token_bins.csv"),
-        ("Layer 7 -- Stability",                          out / "L7_stability.csv"),
-        ("Layer 7 -- Stability by Method",                out / "L7_stability_by_method.csv"),
-        ("Layer 8 -- Correlation Pearson",                out / "L8_AV_correlation_pearson.csv"),
-        ("Layer 8 -- Correlation Spearman",               out / "L8_AV_correlation_spearman.csv"),
-        ("Layer 12 -- Drift",                             out / "L12_drift.csv"),
-        ("Layer 13 -- Entropy",                           out / "L13_entropy.csv"),
-        ("Layer 14 -- Error Taxonomy (MalwareBench 2.0)", out / "L14_error_taxonomy_MB.csv"),
-        ("Layer 15 -- Max Risk",                          out / "L15_max_risk.csv"),
-        ("Layer 15 -- Top 10 Worst Cases",                out / "L15_top10_worst_cases.csv"),
-        ("Model Comparison",                              out / "MC_model_comparison.csv"),
-        ("Significance Tests",                            out / "MC_significance_tests.csv"),
-        ("Model Comparison -- VirusTotal Stats",          out / "MC_model_comparison_VT.csv"),
-        ("Significance Tests -- VirusTotal",              out / "MC_significance_tests_VT.csv"),
-        ("Benchmark Comparison",                          out / "BENCH_comparison.csv"),
+        ("Descriptive Statistics",             out / "descriptive_statistics.csv"),
+        ("Score Agreement Analysis",           out / "agreement_analysis.csv"),
+        (" Token vs Score",                     out / "token_vs_score.csv"),
+        ("Token Bins",                         out / "token_bins.csv"),
+
+        (" Max Risk",                          out / "max_risk.csv"),
+        ("Top 10 Worst Cases",                out / "top10_worst_cases.csv"),
+        ("Model Comparison",                              out / "model_comparison.csv"),
+        ("Significance Tests",                            out / "significance_tests.csv"),
+        ("Model Comparison -- VirusTotal Stats",          out / "model_comparison_VT.csv"),
+        ("Significance Tests -- VirusTotal",              out / "significance_tests_VT.csv"),
     ]
 
     sections_html = ""
     for title, csv_path in layers:
-        if title == "Layer 15 -- Top 10 Worst Cases":
+        if title == "Top 10 Worst Cases":
             sections_html += f"""
         <section>
             <h2>{title}
@@ -2336,13 +2327,15 @@ def main():
     """
     CLI entry point for the multi-layer statistical analyzer.
 
-    Parses command-line arguments, loads evaluation CSV files via DataLoader,
-    runs all statistical layers in sequence, generates the summary dashboard,
-    and writes the HTML report.
+    Scans a directory for all CSV files automatically, loads them via
+    DataLoader, runs the selected statistical layers, generates the summary
+    dashboard, and writes the HTML report.
 
     CLI arguments:
-        --files (required, one or more): Paths to evaluation CSV files.
-            Each file represents one model.
+        --dir (required): Path to a folder containing evaluation CSV files.
+            All *.csv files found in the folder will be loaded automatically.
+            Each file represents one model; the model name is derived from
+            the filename stem using the existing DataLoader convention.
         --benchmark (optional): Path to a reference benchmark CSV for
             BENCH_* comparison. If omitted, an internal quartile reference
             is used.
@@ -2351,50 +2344,47 @@ def main():
         --output (default "stats_output"): Output directory name. Created if
             it does not exist. A plots/ subdirectory is created inside it.
 
-    Output structure:
-        <output>/
-            L1_descriptive_statistics.csv
-            L2_binary_analysis.csv
-            L3_agreement_analysis.csv
-            L5_segmentation.csv
-            L6_token_vs_score.csv
-            L6_token_bins.csv
-            L7_stability.csv
-            L7_stability_by_method.csv
-            L8_AV_correlation_pearson.csv
-            L8_AV_correlation_spearman.csv
-            L12_drift.csv
-            L13_entropy.csv
-            L14_error_taxonomy_MB.csv
-            L15_max_risk.csv
-            L15_top10_worst_cases.csv
-            MC_model_comparison.csv
-            MC_significance_tests.csv
-            MC_model_comparison_VT.csv
-            MC_significance_tests_VT.csv
-            BENCH_comparison.csv
-            report.html
-            plots/
-                (all .png figures from each layer)
+    Active output layers:
+        DASHBOARD_summary.png
+        L3_agreement_analysis
+        L4_score_percentage_histogram
+        L6_tokens_vs_score
+        L8_correlation_heatmap
+        MC_model_comparison
+        MC_score_distribution_stacked_VT
+        report.html
     """
     parser = argparse.ArgumentParser(
         description="Multi-layer statistics for Malicious AI evaluation results",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             Examples:
-              python malicious_ai_statistics.py --files results_A.csv
-              python malicious_ai_statistics.py --files results_A.csv results_B.csv
-              python malicious_ai_statistics.py --files results_A.csv --benchmark bench.csv
-              python malicious_ai_statistics.py --files results_A.csv --threshold 0.4 --output my_report
+              python malicious_ai_statistics.py --dir my_results_folder
+              python malicious_ai_statistics.py --dir my_results_folder --threshold 0.4
+              python malicious_ai_statistics.py --dir my_results_folder --output my_report
+              python malicious_ai_statistics.py --dir my_results_folder --benchmark bench.csv
         """)
     )
-    parser.add_argument("--files",     nargs="+", required=True,  help="One or more evaluation CSV files")
+    parser.add_argument("--dir",       required=True,             help="Folder containing evaluation CSV files (all *.csv files will be loaded)")
     parser.add_argument("--benchmark", default=None,              help="Optional benchmark CSV for comparison")
     parser.add_argument("--threshold", type=float, default=0.5,   help="Binary classification threshold (default 0.5)")
     parser.add_argument("--output",    default="stats_output",    help="Output directory name (default: stats_output)")
     args = parser.parse_args()
 
-    # -- Setup output dirs --------------------------------------------------
+    # -- Auto-discover CSV files from directory --------------------------------
+    input_dir = Path(args.dir)
+    if not input_dir.is_dir():
+        print(f"[ERROR] --dir '{args.dir}' is not a valid directory.")
+        sys.exit(1)
+
+    csv_files = sorted(input_dir.glob("*.csv"))
+    if not csv_files:
+        print(f"[ERROR] No CSV files found in directory: '{args.dir}'")
+        sys.exit(1)
+
+    file_paths = [str(f) for f in csv_files]
+
+    # -- Setup output dirs -----------------------------------------------------
     out_dir   = Path(args.output)
     plots_dir = out_dir / "plots"
     out_dir.mkdir(exist_ok=True)
@@ -2403,13 +2393,16 @@ def main():
     print(f"\n{'='*60}")
     print(f"  MALICIOUS AI -- MULTI-LAYER STATISTICS ANALYZER")
     print(f"{'='*60}")
-    print(f"  Files:     {args.files}")
-    print(f"  Threshold: {args.threshold}")
-    print(f"  Output:    {out_dir}/")
+    print(f"  Source dir: {input_dir}/")
+    print(f"  Files found ({len(file_paths)}):")
+    for f in file_paths:
+        print(f"    - {Path(f).name}")
+    print(f"  Threshold:  {args.threshold}")
+    print(f"  Output:     {out_dir}/")
     print(f"{'='*60}\n")
 
-    # -- Load data ----------------------------------------------------------
-    loader = DataLoader(args.files, threshold=args.threshold)
+    # -- Load data -------------------------------------------------------------
+    loader = DataLoader(file_paths, threshold=args.threshold)
     df     = loader.combined
 
     print(f"\n[INFO] Total rows loaded: {len(df)}")
@@ -2420,32 +2413,50 @@ def main():
     if args.threshold == 0.5:
         args.threshold = compute_dynamic_threshold(df, default=args.threshold)
 
-    # -- Run all layers -----------------------------------------------------
-    l1   = layer1_descriptive(df, out_dir)
-    layer2_binary(df, args.threshold, out_dir)
-    layer3_agreement(df, args.threshold, out_dir, plots_dir)
-    layer4_continuous(df, args.threshold, out_dir, plots_dir)
-    layer4_percentage_histogram(df, out_dir, plots_dir)
-    layer5_segmentation(df, out_dir, plots_dir)
-    layer6_tokens_vs_score(df, out_dir, plots_dir)
-    stab = layer7_stability(df, out_dir, plots_dir)
-    layer8_correlation(df, out_dir, plots_dir)
-    layer12_drift(df, stab, out_dir, plots_dir)
-    layer13_entropy(df, out_dir, plots_dir)
-    layer14_error_taxonomy(df, args.threshold, out_dir, plots_dir)
-    l15  = layer15_max_risk(df, out_dir)
+    # -- Run selected layers ---------------------------------------------------
 
-    # -- Model comparison ---------------------------------------------------
+    # L1: mandatory — required as input for summary_dashboard()
+    l1 = layer1_descriptive(df, out_dir)
+
+    # layer2_binary(df, args.threshold, out_dir)                              # L2  — pruned
+
+    # L3: agreement analysis ✓
+    layer3_agreement(df, args.threshold, out_dir, plots_dir)
+
+    # layer4_continuous(df, args.threshold, out_dir, plots_dir)               # L4 regular — pruned
+
+    # L4 histogram variant ✓
+    layer4_percentage_histogram(df, out_dir, plots_dir)
+
+    # layer5_segmentation(df, out_dir, plots_dir)                             # L5  — pruned
+
+    # L6: tokens vs score ✓
+    layer6_tokens_vs_score(df, out_dir, plots_dir)
+
+    # layer7_stability(df, out_dir, plots_dir)                                # L7  — pruned
+    stab = None  # placeholder; required signature for layer12 if re-enabled
+
+    # L8: correlation heatmap ✓
+    layer8_correlation(df, out_dir, plots_dir)
+
+    # layer12_drift(df, stab, out_dir, plots_dir)                             # L12 — pruned (depends on stab)
+    # layer13_entropy(df, out_dir, plots_dir)                                 # L13 — pruned
+    # layer14_error_taxonomy(df, args.threshold, out_dir, plots_dir)          # L14 — pruned
+
+    # L15: mandatory — required as input for summary_dashboard()
+    l15 = layer15_max_risk(df, out_dir)
+
+    # -- Model comparison: MC_model_comparison + MC_score_distribution_stacked_VT ✓
     model_comparison(loader.frames, loader.model_names, args.threshold, out_dir, plots_dir)
 
-    # -- Benchmark ---------------------------------------------------------
+    # -- Benchmark (runs only if --benchmark was supplied) --------------------
     benchmark_comparison(df, args.benchmark, out_dir, plots_dir)
 
-    # -- Dashboard ---------------------------------------------------------
+    # -- Dashboard: DASHBOARD_summary.png ✓ -----------------------------------
     summary_dashboard(df, l1, l15, args.threshold, out_dir, plots_dir,
                       frames=loader.frames, model_names=loader.model_names)
 
-    # -- HTML Report -------------------------------------------------------
+    # -- HTML Report ✓ --------------------------------------------------------
     meta = {
         "timestamp":     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "models":        ", ".join(loader.model_names),
@@ -2459,19 +2470,11 @@ def main():
     }
     generate_html_report(out_dir, plots_dir, meta)
 
-    # -- Summary to terminal -----------------------------------------------
+    # -- Summary to terminal --------------------------------------------------
     print(f"\n{'='*60}")
     print(f"  [OK] DONE -- all results saved to: {out_dir}/")
     print(f"{'='*60}")
     print(f"  [CHART] Open report:  {out_dir}/report.html")
-
-    print("\n✅ TASK 1 COMPLETE -- Layer 8: MalwareBench_Score removed; MalwareBench_Normalized used exclusively in correlation matrices")
-    print("✅ TASK 2 COMPLETE -- Layer 4: exactly two distribution figures retained; threshold sensitivity and box plot removed")
-    print("✅ TASK 3 COMPLETE -- All user-facing 'MalwareBench' strings updated to 'MalwareBench 2.0'")
-    print("\n✅ PART 8 COMPLETE -- all fixes implemented")
-    print("\n✅ TASK 1 COMPLETE -- All round(..., 6) reduced to round(..., 5); no number displayed with more than 5 decimal places")
-    print("✅ TASK 2 COMPLETE -- Stacked bar charts: full legend retained (all theoretical buckets), zero-height segments skipped per model")
-    print("\n✅ PART 10 COMPLETE — Number precision and clean stacked bars implemented.")
 
 
 if __name__ == "__main__":
