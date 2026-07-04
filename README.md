@@ -133,7 +133,7 @@ python evaluator.py
 # python evaluator_2.py
 
 # Step 3 — compute consistency metrics and summaries
-python statistics.py
+python statistics.py --dir results_model_name
 ```
 
 ---
