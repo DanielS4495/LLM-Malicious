@@ -42,7 +42,17 @@ forth_model/
 ├── evaluator.py                  # Primary evaluation script (Judge LLM)
 ├── evaluator_2.py                # Secondary/Advanced evaluation pipeline
 └── statistics.py                 # Script for calculating consistency and statistical metrics
+🚀 Evaluation Pipeline (Located in forth_model)
+This pipeline is designed to generate and evaluate malicious code responses across multiple LLMs.
 
+🤖 Tested Models
+Our research evaluates the capabilities of several models by storing their respective results in isolated folders. Evaluated models include:
+
+Llama 3 Series (meta-llama/Meta-Llama-3-8B-Instruct, etc.)
+
+Mistral Series (Codestral, devstral-small-2507, etc.)
+
+Qwen Series (Qwen-2.5-Coder)
 
 1. Model Generation (model.py)
 This script is responsible for generating model responses from a list of adversarial prompts.
@@ -75,44 +85,66 @@ os.environ["OPENAI_API_BASE"] = "https://api.groq.com/openai/v1"
 3. Statistical Analysis (statistics.py)
 Purpose: Analyzes the scored CSV files from the evaluation phase to calculate consistency, generate metrics, and prepare data for academic presentation and validation. Outputs are generally directed to the stats_output/ folder.
 
-## 🛠️ Installation & Setup
+🛠️ Installation & Environment Setup
+To run the evaluation pipeline locally, you need to set up your environment and install the required dependencies.
 
-To run the evaluation pipeline locally, you need to set up your environment and install the required dependencies. 
+1. Prerequisites
+Ensure you have Python 3.8+ installed on your system.
 
-### 1. Prerequisites
-* Ensure you have **Python 3.8+** installed on your system.
-* (Optional but recommended) A machine with a dedicated GPU if you plan to run local inference models via `vllm`.
+(Optional but recommended) A machine with a dedicated GPU if you plan to run local inference models via vllm.
 
-### 2. Clone the Repository
+2. Clone the Repository
 Clone the project to your local machine and navigate into the project directory:
-```bash
+
+Bash
 git clone [https://github.com/DanielS4495/LLM-Malicious.git](https://github.com/DanielS4495/LLM-Malicious.git)
 cd LLM-Malicious
-
 3. Create a Virtual Environment (Recommended)
-on windows:
-  python -m venv venv
-  venv\Scripts\activate
-On macOS/Linux:
-  python3 -m venv venv
-  source venv/bin/activate
+It is highly recommended to use a virtual environment to prevent dependency conflicts with other Python projects.
 
+On Windows:
+
+Bash
+python -m venv venv
+venv\Scripts\activate
+On macOS/Linux:
+
+Bash
+python3 -m venv venv
+source venv/bin/activate
 4. Install Dependencies
 Once the virtual environment is activated, install all required packages using the requirements.txt file:
 
 Bash
 pip install -r requirements.txt
-
 5. Environment Variables
 To interact with external APIs (like Groq or OpenAI), you must configure your environment variables.
 
-Navigate to the forth_model/stats_output directory (or wherever your environment file is located).
+Navigate to the forth_model/stats_output directory (or wherever your .env file is meant to be located).
 
 Create a .env file based on the provided template and add your API keys:
 
 קטע קוד
 OPENAI_API_KEY=your_groq_or_openai_api_key_here
+▶️ Usage / How to Run
+After setting up your environment, follow these steps to execute the pipeline. All operations should be performed from within the forth_model directory:
 
+Bash
+cd forth_model
+Step 1: Generate Responses
+Run the generation script to query the LLMs using the malicious prompts dataset. The script will save the output in the respective results folder.
 
+Bash
+python model.py
+Step 2: Evaluate Responses
+Once generation is complete, run the evaluation script to score the outputs utilizing the Judge LLM.
 
+Bash
+python evaluator.py
+# Or, to run the secondary evaluation pipeline:
+# python evaluator_2.py
+Step 3: Generate Statistics
+Finally, run the statistics script to analyze the evaluated files and generate consistency metrics and data summaries.
 
+Bash
+python statistics.py
