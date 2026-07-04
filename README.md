@@ -75,4 +75,44 @@ os.environ["OPENAI_API_BASE"] = "https://api.groq.com/openai/v1"
 3. Statistical Analysis (statistics.py)
 Purpose: Analyzes the scored CSV files from the evaluation phase to calculate consistency, generate metrics, and prepare data for academic presentation and validation. Outputs are generally directed to the stats_output/ folder.
 
+## 🛠️ Installation & Setup
+
+To run the evaluation pipeline locally, you need to set up your environment and install the required dependencies. 
+
+### 1. Prerequisites
+* Ensure you have **Python 3.8+** installed on your system.
+* (Optional but recommended) A machine with a dedicated GPU if you plan to run local inference models via `vllm`.
+
+### 2. Clone the Repository
+Clone the project to your local machine and navigate into the project directory:
+```bash
+git clone [https://github.com/DanielS4495/LLM-Malicious.git](https://github.com/DanielS4495/LLM-Malicious.git)
+cd LLM-Malicious
+
+3. Create a Virtual Environment (Recommended)
+on windows:
+  python -m venv venv
+  venv\Scripts\activate
+On macOS/Linux:
+  python3 -m venv venv
+  source venv/bin/activate
+
+4. Install Dependencies
+Once the virtual environment is activated, install all required packages using the requirements.txt file:
+
+Bash
+pip install -r requirements.txt
+
+5. Environment Variables
+To interact with external APIs (like Groq or OpenAI), you must configure your environment variables.
+
+Navigate to the forth_model/stats_output directory (or wherever your environment file is located).
+
+Create a .env file based on the provided template and add your API keys:
+
+קטע קוד
+OPENAI_API_KEY=your_groq_or_openai_api_key_here
+
+
+
 
