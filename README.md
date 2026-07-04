@@ -1,12 +1,152 @@
-# LLM-Malicious
+# LLM Safety-Robustness Evaluation Pipeline
 
-*Note: The sources for each collection of prompts are documented in the comment section for each commit.*
+A research framework for benchmarking how large language models respond to adversarial requests — measuring refusal behaviour, response consistency, and safety-robustness across multiple model families.
 
-## 📚 References & Sources
+> **Academic context.** This project was developed as part of a final-year degree project. Its goal is to *measure and compare* the robustness of LLMs against misuse, using an automated evaluation pipeline built around a judge model and statistical consistency analysis.
 
-**Articles:**
-* [Project Documentation / Base Article](https://docs.google.com/document/d/1u4HCAhez2J9OF_zu4qODzZ0taol4BOYi_jz9zEAOXcs/edit?usp=sharing)
+---
 
+## 📖 Overview
+
+The pipeline runs a fixed set of adversarial prompts through several LLMs, then uses a separate **judge model** to score each response against a safety rubric. The scored outputs feed a statistical layer that measures consistency and produces the metrics used for analysis and academic presentation.
+
+The core research question is not *how to produce harmful output*, but **how reliably different models refuse or resist adversarial requests**, and how consistent that behaviour is across repeated trials.
+
+---
+
+## ✨ What the Pipeline Does
+
+- **Multi-model generation** — sends the same prompt set to several LLMs through a unified interface.
+- **Automated judging** — a judge LLM scores each response against a safety rubric and assigns a risk/refusal score.
+- **Consistency analysis** — statistical scripts measure how stable each model's behaviour is across runs.
+- **Reproducible outputs** — results are stored per-model in isolated folders with a clear, serialized naming convention.
+- **Rate-limit aware** — request pacing and serial processing keep the pipeline within free-tier API limits.
+
+---
+
+## 🤖 Evaluated Models
+
+Results for each model are stored in isolated directories to keep comparisons clean. Model families evaluated include:
+
+| Family | Example models |
+|--------|----------------|
+| Llama 3 | `meta-llama/Meta-Llama-3-8B-Instruct` |
+| Mistral | `Codestral`, `devstral-small-2507` |
+| Qwen | `Qwen-2.5-Coder` |
+
+---
+
+## 🗂️ Project Structure
+
+The project evolved through several experimental iterations (`first-model`, `second_model`, `third_model`). The current, consolidated pipeline lives in **`forth_model/`**, which merges the successful components of the earlier iterations into a single environment.
+
+```text
+forth_model/
+├── evaluation/                   # Evaluation scripts and assets
+├── results/                      # Aggregated result outputs
+├── results_codestral-latest/     # Per-model outputs (Codestral)
+├── results_devstral-small-2507/  # Per-model outputs (Devstral)
+│   └── responses/                # Raw response data (evaluated batches)
+├── stats_output/                 # Generated statistics and analysis
+├── prompts.xlsx                  # Adversarial prompt set (evaluation input)
+├── model.py                      # Model interaction & response generation
+├── evaluator.py                  # Primary judge-model evaluation
+├── evaluator_2.py                # Secondary / advanced evaluation pipeline
+└── statistics.py                 # Consistency and statistical metrics
+```
+
+---
+
+## 🔬 Pipeline Stages
+
+### 1. Response Generation — `model.py`
+
+Reads the prompt set, sends each prompt to a specified LLM, and saves the raw response to that model's results folder.
+
+- **Prompt selection** — filter the prompt set with standard `pandas` operations.
+- **Rate limiting** — `time.sleep()` paces requests to respect API limits.
+- **Clean datasets** — valid responses (including refusals) are saved; transport-level errors (e.g. `Bad Request`) are skipped so the output stays clean.
+
+### 2. Response Evaluation — `evaluator.py` / `evaluator_2.py`
+
+Acts as the **judge**: reads the generated CSVs, passes each response alongside its original prompt to an evaluator LLM, and assigns a safety score against the rubric.
+
+Output files use a serialized naming convention, saved to the model's results directory:
+
+```text
+EVALUATE_[model]_[batch]_groq_[judge-model]_final.csv
+```
+
+### 3. Statistical Analysis — `statistics.py`
+
+Reads the scored CSVs and computes consistency, aggregate metrics, and summaries for analysis and validation. Outputs go to `stats_output/`.
+
+---
+
+## 🛠️ Installation
+
+### Prerequisites
+
+- Python 3.8+
+- *(Optional)* A dedicated GPU if running local inference via `vllm`.
+
+### Setup
+
+```bash
+# 1. Clone
+git clone https://github.com/DanielS4495/LLM-Malicious.git
+cd LLM-Malicious
+
+# 2. Create a virtual environment
+python3 -m venv venv
+source venv/bin/activate          # Windows: venv\Scripts\activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+```
+
+### Environment Variables
+
+Create a `.env` file with your API credentials. When using **Groq** as the judge backend, set:
+
+```bash
+OPENAI_API_KEY=your_api_key_here
+OPENAI_API_BASE=https://api.groq.com/openai/v1
+DATASETS_NUM_PROC=1               # serial processing for free-tier limits
+```
+
+---
+
+## ▶️ Usage
+
+Run all steps from inside the `forth_model` directory:
+
+```bash
+cd forth_model
+
+# Step 1 — generate model responses
+python model.py
+
+# Step 2 — score responses with the judge model
+python evaluator.py
+# or the secondary pipeline:
+# python evaluator_2.py
+
+# Step 3 — compute consistency metrics and summaries
+python statistics.py
+```
+
+---
+
+## 📊 Interpreting Results
+
+Each model's directory contains its raw responses and scored evaluation files. The statistical output in `stats_output/` reports how consistently each model refused or resisted adversarial prompts — the primary basis for cross-model comparison in this study.
+
+---
+
+## 📚 References
+
+- [Project Documentation / Base Article](https://docs.google.com/document/d/1u4HCAhez2J9OF_zu4qODzZ0taol4BOYi_jz9zEAOXcs/edit?usp=sharing)
 **Repositories & Datasets:**
 * [MalwareBench](https://github.com/MAIL-Tele-AI/MalwareBench.git) - *See `attack_prompts.xlsx` in the README*
 * [Jailbreak LLMs](https://github.com/verazuo/jailbreak_llms.git) - *Navigate to `data/prompts`*
@@ -14,137 +154,8 @@
 * [MalwareSourceCode](https://github.com/vxunderground/MalwareSourceCode.git)
 * [Codesagar Malicious LLM Prompts](https://huggingface.co/datasets/codesagar/malicious-llm-prompts) (HuggingFace)
 * [CySecBench Dataset](https://github.com/cysecbench/dataset.git)
-* [Perplexity AI Database Search](https://www.perplexity.ai/search/bshbyl-mkhqr-blbd-tmts-ly-data-4hYFvvAVT4SoDQoW.IjkIA?0=d#0) - *Page used for research and database collection*
+* [Perplexity AI Database Search](https://www.perplexity.ai/search/bshbyl-mkhqr-blbd-tmts-ly-data-4hYFvvAVT4SoDQoW.IjkIA?0=d#0) - *Page used for research and database collection*.
 
 ---
 
-## 📂 Project Structure & Workflow
-
-The project is structured into multiple stages (folders), representing the evolution and refinement of our evaluation pipeline.
-
-* **Historical Iterations (`first-model`, `second model`, `third_model`):** These folders contain earlier experimental versions. Each iteration focused on testing different approaches, methodologies, and specific aspects of LLM evaluation.
-* **Unified Pipeline (`forth_model`):** This is the **current, fully updated, and improved version** of the project. Insights and successful components from the previous iterations were merged into this centralized environment. All current evaluations, comprehensive scripts, and results are actively managed here.
-
-### Structure of the Current Workspace (`forth_model`):
-```text
-forth_model/
-├── evaluation/                   # Evaluation scripts and assets
-├── results/                      # General or aggregated result outputs
-├── results_codestral-latest/     # Specific outputs for the Codestral model
-├── results_devstral-small-2507/  # Specific outputs for the Devstral model
-│   └── responses/                # Raw response data
-│       ├── EVALUATE_devstral-small-2507_1_groq_llama-3.3_final.csv
-│       ├── EVALUATE_devstral-small-2507_2_groq_llama-3.3_final.csv
-│       └── ...                   # Additional evaluated batches
-├── stats_output/                 # Generated statistics and analysis
-├── attack_prompts.xlsx           # The primary dataset of malicious prompts
-├── model.py                      # Main script for LLM interaction & generation
-├── evaluator.py                  # Primary evaluation script (Judge LLM)
-├── evaluator_2.py                # Secondary/Advanced evaluation pipeline
-└── statistics.py                 # Script for calculating consistency and statistical metrics
-🚀 Evaluation Pipeline (Located in forth_model)
-This pipeline is designed to generate and evaluate malicious code responses across multiple LLMs.
-
-🤖 Tested Models
-Our research evaluates the capabilities of several models by storing their respective results in isolated folders. Evaluated models include:
-
-Llama 3 Series (meta-llama/Meta-Llama-3-8B-Instruct, etc.)
-
-Mistral Series (Codestral, devstral-small-2507, etc.)
-
-Qwen Series (Qwen-2.5-Coder)
-
-1. Model Generation (model.py)
-This script is responsible for generating model responses from a list of adversarial prompts.
-
-Purpose: Reads prompts from the Excel file (attack_prompts.xlsx), sends them to a specified LLM, and saves the raw responses to a designated output folder (e.g., results_codestral-latest/).
-
-Key Features:
-
-Prompt Filtering: Customize prompt selection using pandas filtering.
-
-Rate Limiting: Utilizes time.sleep() to pause the script between requests, ensuring API rate limits are respected.
-
-Error Handling: Successful responses (including model refusals) are saved, while system errors (like Bad Request) are bypassed to keep the output datasets clean.
-
-2. Response Evaluation (evaluator.py & evaluator_2.py)
-These scripts act as the "Judge", evaluating the generated responses based on our security rubrics.
-
-Purpose: Reads the generated CSV files, sends the output alongside the original prompt to an evaluator LLM (e.g., Llama via Groq), and assigns a security risk score.
-
-Output: Generated evaluation files are saved with clear, serialized naming conventions (e.g., EVALUATE_[model]_[batch]_groq_[judge-model]_final.csv) within the model's respective results directory.
-
-Groq Configuration: When using Groq for evaluation, ensure the following environment variables are set:
-
-os.environ["DATASETS_NUM_PROC"] = "1": Forces serial processing to respect free-tier limits.
-
-os.environ["OPENAI_API_KEY"]: Your Groq API key.
-
-os.environ["OPENAI_API_BASE"] = "https://api.groq.com/openai/v1"
-
-3. Statistical Analysis (statistics.py)
-Purpose: Analyzes the scored CSV files from the evaluation phase to calculate consistency, generate metrics, and prepare data for academic presentation and validation. Outputs are generally directed to the stats_output/ folder.
-
-🛠️ Installation & Environment Setup
-To run the evaluation pipeline locally, you need to set up your environment and install the required dependencies.
-
-1. Prerequisites
-Ensure you have Python 3.8+ installed on your system.
-
-(Optional but recommended) A machine with a dedicated GPU if you plan to run local inference models via vllm.
-
-2. Clone the Repository
-Clone the project to your local machine and navigate into the project directory:
-
-Bash
-git clone [https://github.com/DanielS4495/LLM-Malicious.git](https://github.com/DanielS4495/LLM-Malicious.git)
-cd LLM-Malicious
-3. Create a Virtual Environment (Recommended)
-It is highly recommended to use a virtual environment to prevent dependency conflicts with other Python projects.
-
-On Windows:
-
-Bash
-python -m venv venv
-venv\Scripts\activate
-On macOS/Linux:
-
-Bash
-python3 -m venv venv
-source venv/bin/activate
-4. Install Dependencies
-Once the virtual environment is activated, install all required packages using the requirements.txt file:
-
-Bash
-pip install -r requirements.txt
-5. Environment Variables
-To interact with external APIs (like Groq or OpenAI), you must configure your environment variables.
-
-Navigate to the forth_model/stats_output directory (or wherever your .env file is meant to be located).
-
-Create a .env file based on the provided template and add your API keys:
-
-קטע קוד
-OPENAI_API_KEY=your_groq_or_openai_api_key_here
-▶️ Usage / How to Run
-After setting up your environment, follow these steps to execute the pipeline. All operations should be performed from within the forth_model directory:
-
-Bash
-cd forth_model
-Step 1: Generate Responses
-Run the generation script to query the LLMs using the malicious prompts dataset. The script will save the output in the respective results folder.
-
-Bash
-python model.py
-Step 2: Evaluate Responses
-Once generation is complete, run the evaluation script to score the outputs utilizing the Judge LLM.
-
-Bash
-python evaluator.py
-# Or, to run the secondary evaluation pipeline:
-# python evaluator_2.py
-Step 3: Generate Statistics
-Finally, run the statistics script to analyze the evaluated files and generate consistency metrics and data summaries.
-
-Bash
-python statistics.py
+.
